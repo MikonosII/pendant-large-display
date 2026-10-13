@@ -50,3 +50,4 @@ simulator/.next/
 simulator/out/
 *.log
 .DS_Store
+firmware-esp32/.pio/

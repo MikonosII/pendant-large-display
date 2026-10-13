@@ -6,7 +6,9 @@
 //  shown in portrait as 320×480). This fork adds selectable profiles so the
 //  same firmware can drive a physically larger panel.
 //
-//  Target for this fork: 7" 800×480 panel driven in portrait as 480×800.
+//  Target for this fork: Elecrow CrowPanel Advance 7" (GW1076-i2), native
+//  800×480 RGB, UI in portrait as 480×800. Flash firmware-esp32/ to that
+//  board — the STM32 ILI9488 path below is layout-reference only.
 //
 //  Select a profile with -DSCREEN_PROFILE=... at compile time, or edit the
 //  default below. The interactive layout lab under simulator/ mirrors these

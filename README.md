@@ -1,35 +1,29 @@
 # SmartPendant Large Screen Fork
 
-Fork of [nickshl/SmartPendant](https://github.com/nickshl/SmartPendant) — the grblHAL MPG/DRO touch pendant — adapted for a **7″ touch screen in 480×800 portrait**.
+Fork of [nickshl/SmartPendant](https://github.com/nickshl/SmartPendant) aimed at a **7″ CrowPanel Advance** touch HMI in **480×800 portrait**.
 
-Upstream is locked to a **3.5″ ILI9488 / FT6236** panel (logical **320×480** portrait). This fork adds compile-time **screen profiles**, scales chrome (header, tabs, soft buttons), and ships a **browser layout lab** so you can try the larger layout before flashing hardware.
+## Target hardware (what to flash)
 
-## Target display
-
-**7″ panel, native 800×480, UI in portrait 480×800** (`SCREEN_PROFILE=2`, default).
-
-| Profile | Define | Logical size | Typical panel |
-|--------|--------|--------------|---------------|
-| Stock 3.5″ | `SCREEN_PROFILE_3INCH5_320x480` (0) | 320×480 | ILI9488 + FT6236 |
-| 4″ same-res | `SCREEN_PROFILE_4INCH_320x480` (1) | 320×480 | Larger glass, same pixels |
-| **7″ portrait** (default) | `SCREEN_PROFILE_7INCH_480x800` (2) | **480×800** | 7″ 800×480 module, rotated to portrait |
-
-Select at configure time:
+| | |
+|--|--|
+| Board | **Elecrow CrowPanel Advance 7.0″** |
+| MCU | ESP32-S3-WROOM-1-N16R8 |
+| Display | **GW1076-i2** IPS RGB 800×480 → UI rotated to **480×800** |
+| Touch | GT911 |
+| Firmware | [`firmware-esp32/`](firmware-esp32/) |
 
 ```bash
-cmake -DCMAKE_TOOLCHAIN_FILE=./cmake/arm_none_eabi_gcc.cmake \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DSCREEN_PROFILE=2 \
-      ..
+cd firmware-esp32
+pio run -e crowpanel-advance-7-v13 -t upload
 ```
 
-Or change the default in `Application/ScreenConfig.h`.
+See [`firmware-esp32/README.md`](firmware-esp32/README.md) for v1.2 vs v1.3 backlight envs.
 
-> **Hardware note:** Profile `2` sizes the framebuffer for **480×800 portrait**. Stock BlackPill + SPI ILI9488 hardware is still 320×480 — use profile `0` or `1` on that board. For the 7″ panel you need a matching display/touch controller (and may want more RAM/SPI bandwidth than the F411 offers comfortably). Use the layout lab to validate UX while wiring hardware.
+The stock STM32F411 + ILI9488 SmartPendant tree remains in this repo as the upstream reference (`Application/`, `DevCore/`, …). **It does not run on the CrowPanel** — different MCU and display bus.
 
 ## Layout lab (browser)
 
-Interactive preview of the pendant chrome at 3.5″ vs 7″ portrait:
+Interactive 480×800 portrait preview (no hardware needed):
 
 ```bash
 cd simulator
@@ -37,40 +31,24 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Next.js (this environment uses port **43123**).
+Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
-## Firmware build
+## STM32 profiles (reference only)
 
-Same as upstream SmartPendant:
+`Application/ScreenConfig.h` still documents the logical sizes used by the layout lab:
 
-* **STM32CubeIDE** — import the project, build, flash with STM32CubeProgrammer.
-* **CMake + arm-none-eabi-gcc** (CMake ≥ 4.0):
+| Profile | Logical size | Notes |
+|--------|--------------|--------|
+| 0 | 320×480 | Upstream 3.5″ |
+| 1 | 320×480 | 4″ same-res |
+| 2 | **480×800** | Matches CrowPanel portrait UI |
 
-```bash
-mkdir build && cd build
-cmake -DCMAKE_TOOLCHAIN_FILE=./cmake/arm_none_eabi_gcc.cmake -DCMAKE_BUILD_TYPE=Debug -DSCREEN_PROFILE=2 ..
-make
-```
+## Status
 
-`DevCore/` is **vendored** in this fork (no submodule checkout required).
-
-## Upstream hardware (unchanged for profiles 0/1)
-
-* WeAct BlackPill F411 (25 MHz HSE)
-* 3.5″ (or 4″ same-res) SPI touch display
-* 100 PPR handwheel
-* grblHAL controller UART in **MPG & DRO** mode
-
-Case/PCB: [Devtronic-US/SmartPendant](https://github.com/Devtronic-US/SmartPendant/)
-
-## What changed vs upstream
-
-* `Application/ScreenConfig.h` — display profiles and chrome metrics (default **7″ 480×800 portrait**)
-* `AppMain.cpp` — panel/touch constructed from profile sizes
-* Header / tabs / soft-button heights follow the profile instead of hard-coded `40`
-* Version bumped to **0.50.x** (fork marker)
-* `simulator/` — Next.js layout lab
+* CrowPanel Advance 7″ bring-up + SmartPendant-style MPG chrome: **in `firmware-esp32/`**
+* grblHAL UART / framed MPG link: **not wired yet**
+* Full screen set (probe, sender, …): **stubbed as tabs**
 
 ## Credits
 
-Original SmartPendant firmware by Nicolai Shlapunov / Devtronic. DevCore is BSD-3-Clause. This fork keeps their copyright headers and adds large-screen layout work on top.
+Original SmartPendant by Nicolai Shlapunov / Devtronic. CrowPanel pin map / timing adapted from Elecrow examples and community Advance bring-up. DevCore is BSD-3-Clause.
