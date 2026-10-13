@@ -19,6 +19,13 @@
 #define TOUCH_I2C_ADDR 0x5D
 #define BL_I2C_ADDR 0x30
 
+// grblHAL link — CrowPanel Advance UART1-OUT (PH2.0-4P)
+// ESP32 TX → controller RX, ESP32 RX ← controller TX (3.3 V TTL)
+#define GRBL_UART_NUM 1
+#define GRBL_UART_TX 20
+#define GRBL_UART_RX 19
+#define GRBL_UART_BAUD 115200
+
 // Chrome metrics (match Application/ScreenConfig.h profile 2)
 #define SCREEN_HEADER_H 56
 #define SCREEN_TABS_H 48

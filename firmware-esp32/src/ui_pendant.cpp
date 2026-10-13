@@ -1,6 +1,7 @@
 #include "ui_pendant.h"
 #include "pins_config.h"
 #include "demo_toolpath.h"
+#include "grbl_link.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -180,11 +181,22 @@ static void on_axis(lv_event_t *e) {
   refresh_axes();
 }
 
+static float jog_feed_for_step() {
+  float s = k_steps[step_idx];
+  if (s >= 1.0f) return 2000.0f;
+  if (s >= 0.1f) return 800.0f;
+  return 200.0f;
+}
+
 static void on_zero(lv_event_t *e) {
   int i = (int)(intptr_t)lv_event_get_user_data(e);
-  wco[i] += wpos[i];
-  wpos[i] = 0.0f;
-  refresh_axes();
+  if (grbl_link_online()) {
+    grbl_link_zero_axis(i);
+  } else {
+    wco[i] += wpos[i];
+    wpos[i] = 0.0f;
+    refresh_axes();
+  }
   lv_event_stop_bubbling(e);
 }
 
@@ -196,10 +208,13 @@ static void on_step(lv_event_t *e) {
 static void on_mpg(lv_event_t *e) {
   (void)e;
   mpg_on = !mpg_on;
+  grbl_link_set_mpg(mpg_on);
   refresh_mpg();
 }
 
 static void on_laser_bump(lv_event_t *e) {
+  // Demo-only bump when offline; live S comes from grblHAL FS: when linked.
+  if (grbl_link_online()) return;
   int dir = (int)(intptr_t)lv_event_get_user_data(e);
   laser_s_cmd += dir * 10.0f;
   if (laser_s_cmd < 0) laser_s_cmd = 0;
@@ -212,9 +227,17 @@ static void on_laser_bump(lv_event_t *e) {
 static void on_soft(lv_event_t *e) {
   int which = (int)(intptr_t)lv_event_get_user_data(e);
   if (page_idx == 0) {
-    if (which == 1) wpos[active_axis] -= k_steps[step_idx];
-    else if (which == 2) wpos[active_axis] += k_steps[step_idx];
-    refresh_axes();
+    if (which == 0) {
+      if (grbl_link_online()) grbl_link_feed_hold();
+      return;
+    }
+    float delta = (which == 1) ? -k_steps[step_idx] : k_steps[step_idx];
+    if (grbl_link_online()) {
+      grbl_link_jog(active_axis, delta, jog_feed_for_step());
+    } else {
+      wpos[active_axis] += delta;
+      refresh_axes();
+    }
   } else if (which == 0) {
     show_page(0);
     uint32_t n = lv_obj_get_child_cnt(header);
@@ -552,5 +575,37 @@ void ui_pendant_create() {
 }
 
 void ui_pendant_tick() {
-  // Future: refresh wpos from grblHAL; optionally highlight completed path segments
+  static uint32_t last_ui_ms = 0;
+  const uint32_t now = millis();
+  if (now - last_ui_ms < 100) return;
+  last_ui_ms = now;
+
+  grbl_status_t st;
+  if (!grbl_link_get_status(&st) || !st.online) {
+    lv_label_set_text(state_lbl, "Offline  ·  demo  ·  mm");
+    return;
+  }
+
+  for (int i = 0; i < 3; i++) {
+    wpos[i] = st.wpos[i];
+    wco[i] = st.wco[i];
+  }
+  feed_mm_min = st.feed;
+  laser_s_cmd = st.laser_s_cmd;
+  laser_s_act = st.laser_s_act;
+  feed_ov = st.feed_ov;
+  rapid_ov = st.rapid_ov;
+  speed_ov = st.speed_ov;
+
+  if (mpg_on != st.mpg_mode) {
+    mpg_on = st.mpg_mode;
+    refresh_mpg();
+  }
+
+  char buf[48];
+  snprintf(buf, sizeof(buf), "%s  ·  Laser  ·  mm", st.state[0] ? st.state : "?");
+  lv_label_set_text(state_lbl, buf);
+
+  refresh_axes();
+  refresh_telemetry();
 }

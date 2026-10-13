@@ -46,7 +46,7 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 ## Status
 
 * CrowPanel Advance 7″ bring-up + SmartPendant-style MPG chrome: **in `firmware-esp32/`**
-* grblHAL UART / framed MPG link: **not wired yet**
+* grblHAL plain UART link (UART1-OUT IO20/IO19 @ 115200): **wired** — status, MPG, jog, hold, zero; framed transport still TODO
 * Full screen set (probe, sender, …): **stubbed as tabs**
 
 ## Credits

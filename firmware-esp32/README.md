@@ -36,11 +36,32 @@ Use `crowpanel-advance-7-v12` if your board is an older Advance revision (differ
 * GT911 capacitive touch
 * STC8H1K28 backlight on
 * SmartPendant-style chrome: header tabs, DRO, step sizes, MPG toggle, soft buttons
-* Mock jog (no grblHAL link yet)
+* **Plain ASCII UART ↔ grblHAL** on CrowPanel **UART1-OUT** (status, MPG claim, jog, hold, zero)
+* Offline demo jog/telemetry when no controller answers (status bar shows `Offline · demo`)
+
+### Wire to grblHAL (SKR / controller)
+
+| CrowPanel UART1-OUT | Controller |
+|---------------------|------------|
+| TX (IO20) | RX |
+| RX (IO19) | TX |
+| GND | GND |
+| 3.3 V logic only | — |
+
+* Baud **115200** 8N1 (same as stock SmartPendant default)
+* Protocol: plain Grbl status (`?` / `<Idle\|WPos:…\|FS:…>`) + realtime `0x8B` MPG toggle — **not** the optional framed `Plugin_mpg_transport` yet
+* Put the S0/S1 function switches in a mode that leaves UART1 free (not mic/I2S on IO19/IO20)
+
+Host parser smoke test (no board needed):
+
+```bash
+g++ -std=c++17 -I include -o /tmp/test_grbl_status \
+  test/test_grbl_status.cpp src/grbl_status.cpp && /tmp/test_grbl_status
+```
 
 ## Next (not in this slice)
 
-* UART / framed MPG transport to grblHAL
+* Optional framed MPG transport (`FramedUart` / `Plugin_mpg_transport`)
 * Probe / overrides / program sender screens wired to a real controller
 * Case / mounting for the 7″ panel + handwheel
 

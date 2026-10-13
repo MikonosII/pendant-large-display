@@ -9,6 +9,7 @@
 #include "pins_config.h"
 #include "LovyanGFX_Driver.h"
 #include "backlight.h"
+#include "grbl_link.h"
 #include "ui_pendant.h"
 
 static LGFX gfx;
@@ -108,11 +109,13 @@ void setup() {
   indev_drv.read_cb = touchpad_read;
   lv_indev_drv_register(&indev_drv);
 
+  grbl_link_begin();
   ui_pendant_create();
   Serial.printf("[ui] %dx%d ready\n", UI_H_RES, UI_V_RES);
 }
 
 void loop() {
+  grbl_link_poll();
   lv_timer_handler();
   ui_pendant_tick();
   delay(2);
