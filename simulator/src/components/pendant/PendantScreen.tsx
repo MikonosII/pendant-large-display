@@ -177,7 +177,7 @@ export function PendantScreen({ profile }: Props) {
                 window.setTimeout(() => setStartFlash(false), 800);
               }}
               startFlash={startFlash}
-              onLaserTest={() => setLaserCmd(50)}
+              onLaserTest={() => setLaserCmd(1)} // armed cue — firmware uses M64→K+
               onLaserOff={() => setLaserCmd(0)}
             />
           )}

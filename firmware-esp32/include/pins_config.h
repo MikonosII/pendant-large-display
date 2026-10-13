@@ -74,9 +74,12 @@
 #define SD_SPI_DUMMY_CS 8
 #endif
 
-// Laser test fire S value (grblHAL $30 scale; 50 ≈ 5% when $30=1000).
-#ifndef LASER_TEST_S
-#define LASER_TEST_S 50
+// Laser PSU K+ enable — grblHAL digital output index for M64/M65.
+// Wire that aux (relay/open-drain) so ACTIVE connects PSU K+ to GND (beam arm).
+// Inactive / M65 opens the path (software inhibit). Map the pin in your
+// grblHAL board config to the matching digital out number.
+#ifndef LASER_ENABLE_DOUT
+#define LASER_ENABLE_DOUT 0
 #endif
 
 // Chrome metrics (match Application/ScreenConfig.h profile 2)

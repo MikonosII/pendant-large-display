@@ -330,18 +330,22 @@ static void on_start(lv_event_t *e) {
 static void on_laser_test(lv_event_t *e) {
   (void)e;
   if (grbl_link_online()) {
-    if (!grbl_link_laser_test((float)LASER_TEST_S)) {
-      lv_label_set_text(state_lbl, "Laser test blocked (Idle+MPG?)");
+    if (!grbl_link_laser_test()) {
+      lv_label_set_text(state_lbl, "Laser enable blocked (Idle+MPG?)");
       return;
     }
-    laser_s_cmd = (float)LASER_TEST_S;
-    laser_s_act = laser_s_cmd;
+    // Visual "armed" cue on the CMD% cell (PWM may still be 0)
+    laser_s_cmd = 1.0f;
+    laser_s_act = 1.0f;
     refresh_telemetry();
+    char buf[48];
+    snprintf(buf, sizeof(buf), "Laser K+ ON  ·  M64P%d", (int)LASER_ENABLE_DOUT);
+    lv_label_set_text(state_lbl, buf);
   } else {
-    laser_s_cmd = (float)LASER_TEST_S;
-    laser_s_act = laser_s_cmd;
+    laser_s_cmd = 1.0f;
+    laser_s_act = 1.0f;
     refresh_telemetry();
-    lv_label_set_text(state_lbl, "Laser TEST  ·  demo M3");
+    lv_label_set_text(state_lbl, "Laser K+ ON  ·  demo");
   }
 }
 
@@ -353,8 +357,12 @@ static void on_laser_off(lv_event_t *e) {
   laser_s_cmd = 0;
   laser_s_act = 0;
   refresh_telemetry();
-  if (!grbl_link_online()) {
-    lv_label_set_text(state_lbl, "Laser OFF  ·  demo M5");
+  if (grbl_link_online()) {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "Laser K+ OFF  ·  M65P%d", (int)LASER_ENABLE_DOUT);
+    lv_label_set_text(state_lbl, buf);
+  } else {
+    lv_label_set_text(state_lbl, "Laser K+ OFF  ·  demo");
   }
 }
 
@@ -1020,7 +1028,7 @@ void ui_pendant_create() {
   lv_obj_center(start_lbl);
   lv_obj_add_event_cb(start_btn, on_start, LV_EVENT_CLICKED, NULL);
 
-  // Laser test (M3 S…) / software inhibit (M5)
+  // Laser enable (M64 → PSU K+ to GND) / inhibit (M65 + M5)
   const int laser_y = step_y + 48 + 52;
   const int laser_bw = (UI_H_RES - 12 - 6) / 2;
   lv_obj_t *laser_test_btn = lv_btn_create(mpg_panel);

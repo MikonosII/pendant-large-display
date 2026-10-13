@@ -315,20 +315,23 @@ bool grbl_link_probe_away(int axis, float target_mm, float feed_mm_min) {
 
 void grbl_link_probe_ack(void) { g_status.probe_fresh = false; }
 
-bool grbl_link_laser_test(float s_cmd) {
+bool grbl_link_laser_test(void) {
   if (!grbl_link_online() || !g_status.mpg_mode) return false;
   if (strcmp(g_status.state, "Idle") != 0) return false;
-  if (!(s_cmd > 0.0f)) s_cmd = 50.0f;
-  char cmd[32];
-  snprintf(cmd, sizeof(cmd), "M3S%.0f\r", s_cmd);
+  // Immediate digital-out on: controller should pull PSU K+ to GND when active.
+  char cmd[24];
+  snprintf(cmd, sizeof(cmd), "M64P%d\r", (int)LASER_ENABLE_DOUT);
   send_line(cmd);
-  Serial.printf("[grbl] laser test %s", cmd);
+  Serial.printf("[grbl] laser enable K+  %s", cmd);
   return true;
 }
 
 bool grbl_link_laser_off(void) {
   if (!grbl_link_online()) return false;
-  send_line("M5\r");
-  Serial.println("[grbl] laser off (M5 inhibit)");
+  char cmd[24];
+  snprintf(cmd, sizeof(cmd), "M65P%d\r", (int)LASER_ENABLE_DOUT);
+  send_line(cmd);  // open K+ enable (inhibit)
+  send_line("M5\r");  // also drop spindle/PWM if armed
+  Serial.printf("[grbl] laser inhibit K+  M65P%d + M5\n", (int)LASER_ENABLE_DOUT);
   return true;
 }

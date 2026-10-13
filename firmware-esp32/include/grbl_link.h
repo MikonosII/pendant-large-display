@@ -50,12 +50,16 @@ bool grbl_link_probe_away(int axis, float target_mm, float feed_mm_min);
 void grbl_link_probe_ack(void);
 
 /**
- * Laser test fire: `M3 S{s}` (constant-power / spindle-enable output).
- * Uses Idle + MPG. Default S is modest — override with LASER_TEST_S.
+ * Laser enable for PSU K+↔GND path: asserts digital out `M64 Pn`
+ * (wire that dout via relay/FET so active pulls K+ to ground).
+ * Port `n` = LASER_ENABLE_DOUT. Needs Idle + MPG.
  */
-bool grbl_link_laser_test(float s_cmd);
+bool grbl_link_laser_test(void);
 
-/** Software inhibit / laser off: `M5` (spindle/laser disable). */
+/**
+ * Software inhibit: clears enable dout (`M65 Pn`) and sends `M5`
+ * so PWM is off as well.
+ */
 bool grbl_link_laser_off(void);
 
 /** grblHAL realtime override bytes (0x90–0xA1). */
