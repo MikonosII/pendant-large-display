@@ -47,10 +47,12 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
 * CrowPanel Advance 7″ bring-up + SmartPendant-style MPG chrome: **in `firmware-esp32/`**
 * grblHAL UART link (UART1-OUT IO20/IO19 @ 115200): **wired** — plain ASCII default; framed `Plugin_mpg_transport` selectable in SETTINGS
-* G-code toolpath preview from parsed NC (`jobs/sample-badge.nc`): **wired** in firmware + simulator (load custom `.nc` in the lab GCODE tab)
+* G-code toolpath preview from parsed NC (`jobs/sample-badge.nc`): **wired** in firmware + simulator
+* Job load: embedded sample + LittleFS `/jobs` + optional SD/TF `/jobs` (GCODE tab)
 * OVERRIDE / FEED tabs with grblHAL realtime override bytes + power feed: **wired**
-* Handwheel quadrature path: **software ready** (pins default −1; set `HANDWHEEL_A/B_GPIO` when wired)
-* Full screen set (probe, sender, …): **partially stubbed** (PROBE)
+* PROBE tab: G38.2/G38.3 toward workpiece, `[PRB:]` + `Pn:P` contact, zero WPos
+* Handwheel: GPIO A/B (default −1) **or** PCF8574 I2C expander (`I2C_MPG_ENABLE`) for wheel + axis buttons
+* Hardware smoke on real CrowPanel + controller: **deferred** until hardware arrives
 
 ## Credits
 

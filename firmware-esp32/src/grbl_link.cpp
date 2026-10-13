@@ -79,6 +79,14 @@ static void handle_line(char *line) {
     return;
   }
 
+  if (line[0] == '[' && !strncmp(line, "[PRB:", 5)) {
+    if (grbl_parse_probe_line(line, &g_status)) {
+      Serial.printf("[grbl] PRB %.3f,%.3f,%.3f ok=%d\n", g_status.probe_mpos[0],
+                    g_status.probe_mpos[1], g_status.probe_mpos[2], (int)g_status.probe_ok);
+    }
+    return;
+  }
+
   if (!strcmp(line, "ok") || !strncmp(line, "error:", 6) || !strncmp(line, "ALARM:", 6) ||
       !strncmp(line, "Grbl", 4)) {
     Serial.printf("[grbl] %s\n", line);
@@ -281,3 +289,28 @@ bool grbl_link_zero_axis(int axis) {
   send_line(cmd);
   return true;
 }
+
+static bool send_probe(int axis, float target_mm, float feed_mm_min, const char *g38) {
+  if (axis < 0 || axis >= GRBL_AXIS_CNT) return false;
+  if (!grbl_link_online() || !g_status.mpg_mode) return false;
+  if (strcmp(g_status.state, "Idle") != 0 && strcmp(g_status.state, "Hold") != 0) return false;
+  if (!(feed_mm_min > 0.0f)) feed_mm_min = 100.0f;
+
+  static const char *axes = "XYZ";
+  g_status.probe_fresh = false;
+  char cmd[72];
+  snprintf(cmd, sizeof(cmd), "G90G21%s%c%.3fF%.2f\r", g38, axes[axis], target_mm, feed_mm_min);
+  send_line(cmd);
+  Serial.printf("[grbl] probe %s\n", cmd);
+  return true;
+}
+
+bool grbl_link_probe_toward(int axis, float target_mm, float feed_mm_min, bool strict) {
+  return send_probe(axis, target_mm, feed_mm_min, strict ? "G38.2" : "G38.3");
+}
+
+bool grbl_link_probe_away(int axis, float target_mm, float feed_mm_min) {
+  return send_probe(axis, target_mm, feed_mm_min, "G38.4");
+}
+
+void grbl_link_probe_ack(void) { g_status.probe_fresh = false; }

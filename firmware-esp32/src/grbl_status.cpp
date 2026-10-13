@@ -59,6 +59,8 @@ bool grbl_parse_status_line(const char *line_in, grbl_status_t *out) {
 
   bool got_pos = false;
   float pos[GRBL_AXIS_CNT] = {0, 0, 0};
+  // Pn: is omitted when no pins are active — clear unless we see P this report.
+  out->probe_triggered = false;
 
   while ((field = strtok_r(nullptr, "|", &save)) != nullptr) {
     if (!strncmp(field, "WPos:", 5)) {
@@ -88,6 +90,11 @@ bool grbl_parse_status_line(const char *line_in, grbl_status_t *out) {
         if (*q == 'F') out->coolant_flood = true;
         if (*q == 'M') out->coolant_mist = true;
       }
+    } else if (!strncmp(field, "Pn:", 3)) {
+      out->probe_triggered = false;
+      for (const char *q = field + 3; *q; q++) {
+        if (*q == 'P') out->probe_triggered = true;
+      }
     } else if (!strncmp(field, "MPG:", 4)) {
       out->mpg_mode = (field[4] == '1');
     }
@@ -108,5 +115,41 @@ bool grbl_parse_status_line(const char *line_in, grbl_status_t *out) {
   }
 
   out->online = true;
+  return true;
+}
+
+bool grbl_parse_probe_line(const char *line_in, grbl_status_t *out) {
+  if (!line_in || !out) return false;
+
+  // Accept "[PRB:…" or "PRB:…"
+  const char *p = line_in;
+  while (*p == ' ' || *p == '\t') p++;
+  if (*p == '[') p++;
+  if (strncmp(p, "PRB:", 4) != 0) return false;
+  p += 4;
+
+  char buf[96];
+  strncpy(buf, p, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+  // Strip trailing ']' / whitespace
+  size_t n = strlen(buf);
+  while (n > 0 && (buf[n - 1] == ']' || buf[n - 1] == '\n' || buf[n - 1] == '\r' ||
+                   buf[n - 1] == ' ')) {
+    buf[--n] = '\0';
+  }
+
+  // "x,y,z:ok" — last ':' separates success flag
+  char *colon = strrchr(buf, ':');
+  if (!colon || colon == buf) return false;
+  *colon = '\0';
+  const char *ok_str = colon + 1;
+
+  float mpos[GRBL_AXIS_CNT] = {0, 0, 0};
+  parse_csv_floats(buf, mpos, GRBL_AXIS_CNT);
+  for (int i = 0; i < GRBL_AXIS_CNT; i++) out->probe_mpos[i] = mpos[i];
+
+  // grblHAL prints 1/0; some ports use "true"/"false"
+  out->probe_ok = (ok_str[0] == '1' || ok_str[0] == 't' || ok_str[0] == 'T');
+  out->probe_fresh = true;
   return true;
 }

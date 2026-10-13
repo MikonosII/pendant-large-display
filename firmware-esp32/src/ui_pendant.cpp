@@ -4,6 +4,8 @@
 #include "sample_job_nc.h"
 #include "grbl_link.h"
 #include "handwheel.h"
+#include "i2c_mpg_io.h"
+#include "job_store.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -17,6 +19,8 @@ static lv_obj_t *content;
 static lv_obj_t *mpg_panel;
 static lv_obj_t *ov_panel;
 static lv_obj_t *feed_panel;
+static lv_obj_t *gcode_panel;
+static lv_obj_t *probe_panel;
 static lv_obj_t *settings_panel;
 static lv_obj_t *transport_btn;
 static lv_obj_t *transport_lbl;
@@ -25,7 +29,20 @@ static lv_obj_t *status_bar;
 static lv_obj_t *mpg_btn;
 static lv_obj_t *state_lbl;
 static lv_obj_t *page_lbl;
-static lv_obj_t *job_lbl;
+static lv_obj_t *path_job_hint;
+
+static lv_obj_t *gcode_list;
+static lv_obj_t *gcode_status_lbl;
+static job_entry_t gcode_entries[JOB_STORE_MAX_FILES];
+static unsigned gcode_entry_count = 0;
+
+static lv_obj_t *probe_axis_btns[3];
+static lv_obj_t *probe_contact_lbl;
+static lv_obj_t *probe_result_lbl;
+static lv_obj_t *probe_feed_lbl;
+static float probe_feed = 100.0f;
+static float probe_travel = 20.0f;  // mm relative travel for toward/away
+static bool probe_strict = true;
 
 static lv_obj_t *ov_feed_val;
 static lv_obj_t *ov_speed_val;
@@ -94,23 +111,84 @@ static void map_xy(float x, float y, lv_coord_t *px, lv_coord_t *py) {
   *py = (lv_coord_t)(path_h - (y - path_min_y) * path_scale);
 }
 
-static void load_sample_job() {
+static void draw_toolpath();
+static void update_head();
+
+static bool ensure_job_path_buf() {
+  if (job_path) return true;
+  job_path = (path_seg_t *)heap_caps_malloc(sizeof(path_seg_t) * GCODE_PATH_MAX_SEGS,
+                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!job_path) {
-    job_path = (path_seg_t *)heap_caps_malloc(sizeof(path_seg_t) * GCODE_PATH_MAX_SEGS,
-                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!job_path) {
-      job_path = (path_seg_t *)malloc(sizeof(path_seg_t) * GCODE_PATH_MAX_SEGS);
-    }
+    job_path = (path_seg_t *)malloc(sizeof(path_seg_t) * GCODE_PATH_MAX_SEGS);
   }
   if (!job_path) {
     job_path_len = 0;
     Serial.println("[gcode] path buffer alloc failed");
-    return;
+    return false;
   }
+  return true;
+}
+
+static void recompute_path_bounds(int w, int h) {
+  float min_x = 1e9f, min_y = 1e9f, max_x = -1e9f, max_y = -1e9f;
+  for (unsigned i = 0; i < job_path_len; i++) {
+    if (job_path[i].x < min_x) min_x = job_path[i].x;
+    if (job_path[i].y < min_y) min_y = job_path[i].y;
+    if (job_path[i].x > max_x) max_x = job_path[i].x;
+    if (job_path[i].y > max_y) max_y = job_path[i].y;
+  }
+  if (job_path_len == 0) {
+    min_x = 0;
+    min_y = 0;
+    max_x = 80;
+    max_y = 50;
+  }
+  const float pad = 4.0f;
+  min_x -= pad;
+  min_y -= pad;
+  max_x += pad;
+  max_y += pad;
+  float bw = max_x - min_x;
+  float bh = max_y - min_y;
+  if (bw < 1) bw = 1;
+  if (bh < 1) bh = 1;
+  float sx = (float)(w - 4) / bw;
+  float sy = (float)(h - 4) / bh;
+  path_scale = sx < sy ? sx : sy;
+  path_min_x = min_x - ((w / path_scale) - bw) * 0.5f;
+  path_min_y = min_y - ((h / path_scale) - bh) * 0.5f;
+}
+
+static void refresh_path_job_hint() {
+  if (!path_job_hint) return;
+  char hint_buf[64];
+  snprintf(hint_buf, sizeof(hint_buf), "Job · %s", job_name);
+  lv_label_set_text(path_job_hint, hint_buf);
+}
+
+static void apply_loaded_job() {
+  if (path_w > 0 && path_h > 0) recompute_path_bounds(path_w, path_h);
+  draw_toolpath();
+  refresh_path_job_hint();
+  update_head();
+}
+
+static void load_sample_job() {
+  if (!ensure_job_path_buf()) return;
   job_path_len = gcode_parse_toolpath(SAMPLE_JOB_NC, job_path, GCODE_PATH_MAX_SEGS);
   strncpy(job_name, SAMPLE_JOB_NAME, sizeof(job_name) - 1);
   job_name[sizeof(job_name) - 1] = '\0';
   Serial.printf("[gcode] loaded %s → %u segs\n", job_name, job_path_len);
+}
+
+static bool load_job_from_store(const char *path) {
+  if (!ensure_job_path_buf()) return false;
+  unsigned n =
+      job_store_load_path(path, job_path, GCODE_PATH_MAX_SEGS, job_name, sizeof(job_name));
+  job_path_len = n;
+  if (n == 0) return false;
+  apply_loaded_job();
+  return true;
 }
 
 static void draw_toolpath() {
@@ -265,6 +343,14 @@ static void refresh_soft_labels() {
     a = "Stop";
     b = "− Feed";
     c = "+ Feed";
+  } else if (page_idx == 3) {
+    a = "Back";
+    b = "Refresh";
+    c = "Sample";
+  } else if (page_idx == 4) {
+    a = "Back";
+    b = "Probe −";
+    c = "Probe +";
   } else {
     a = "Back";
     b = "";
@@ -371,14 +457,19 @@ static void on_transport_toggle(lv_event_t *e) {
   refresh_transport_ui();
 }
 
+static void refresh_gcode_list();
+static void refresh_probe_ui();
+
 static void show_page(int idx) {
   page_idx = idx;
   lv_label_set_text(page_lbl, k_pages[idx]);
   lv_obj_add_flag(mpg_panel, LV_OBJ_FLAG_HIDDEN);
   if (ov_panel) lv_obj_add_flag(ov_panel, LV_OBJ_FLAG_HIDDEN);
   if (feed_panel) lv_obj_add_flag(feed_panel, LV_OBJ_FLAG_HIDDEN);
+  if (gcode_panel) lv_obj_add_flag(gcode_panel, LV_OBJ_FLAG_HIDDEN);
+  if (probe_panel) lv_obj_add_flag(probe_panel, LV_OBJ_FLAG_HIDDEN);
   if (settings_panel) lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
+  if (other_panel) lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
 
   if (idx == 0) {
     lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_HIDDEN);
@@ -388,20 +479,18 @@ static void show_page(int idx) {
   } else if (idx == 2 && feed_panel) {
     lv_obj_clear_flag(feed_panel, LV_OBJ_FLAG_HIDDEN);
     refresh_power_feed_ui();
+  } else if (idx == 3 && gcode_panel) {
+    lv_obj_clear_flag(gcode_panel, LV_OBJ_FLAG_HIDDEN);
+    refresh_gcode_list();
+  } else if (idx == 4 && probe_panel) {
+    lv_obj_clear_flag(probe_panel, LV_OBJ_FLAG_HIDDEN);
+    refresh_probe_ui();
   } else if (idx == 5 && settings_panel) {
     lv_obj_clear_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
     refresh_transport_ui();
-  } else {
+  } else if (other_panel) {
     lv_obj_clear_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
-    if (idx == 3 && job_lbl) {
-      char buf[96];
-      snprintf(buf, sizeof(buf), "GCODE\n%s\n%u segments", job_name, job_path_len);
-      lv_label_set_text(job_lbl, buf);
-      lv_label_set_text(lv_obj_get_child(other_panel, 0), "");
-    } else {
-      lv_label_set_text(lv_obj_get_child(other_panel, 0), k_pages[idx]);
-      if (job_lbl) lv_label_set_text(job_lbl, "");
-    }
+    lv_label_set_text(lv_obj_get_child(other_panel, 0), k_pages[idx]);
   }
   refresh_soft_labels();
 }
@@ -471,6 +560,25 @@ static void go_mpg_tab() {
   }
 }
 
+static void run_probe(int dir) {
+  // dir −1 / +1 along active_axis by probe_travel (G38.2/3 toward target)
+  float target = wpos[active_axis] + (float)dir * probe_travel;
+  if (grbl_link_online()) {
+    bool ok = grbl_link_probe_toward(active_axis, target, probe_feed, probe_strict);
+    if (!ok && state_lbl) lv_label_set_text(state_lbl, "Probe blocked (Idle+MPG?)");
+  } else {
+    wpos[active_axis] = target;
+    if (probe_result_lbl) {
+      char buf[96];
+      snprintf(buf, sizeof(buf), "Demo PRB  M %.3f,%.3f,%.3f  ok", wpos[0] + wco[0],
+               wpos[1] + wco[1], wpos[2] + wco[2]);
+      lv_label_set_text(probe_result_lbl, buf);
+    }
+    if (probe_contact_lbl) lv_label_set_text(probe_contact_lbl, "Contact: demo");
+    refresh_axes();
+  }
+}
+
 static void on_soft(lv_event_t *e) {
   int which = (int)(intptr_t)lv_event_get_user_data(e);
   if (page_idx == 0) {
@@ -502,6 +610,22 @@ static void on_soft(lv_event_t *e) {
       wpos[active_axis] += delta;
       refresh_axes();
     }
+  } else if (page_idx == 3) {
+    if (which == 0) go_mpg_tab();
+    else if (which == 1) refresh_gcode_list();
+    else if (which == 2) {
+      load_sample_job();
+      apply_loaded_job();
+      if (gcode_status_lbl) {
+        char buf[80];
+        snprintf(buf, sizeof(buf), "Loaded %s · %u segs", job_name, job_path_len);
+        lv_label_set_text(gcode_status_lbl, buf);
+      }
+    }
+  } else if (page_idx == 4) {
+    if (which == 0) go_mpg_tab();
+    else if (which == 1) run_probe(-1);
+    else if (which == 2) run_probe(+1);
   } else if (which == 0) {
     go_mpg_tab();
   }
@@ -585,39 +709,106 @@ static lv_obj_t *make_laser_pair(lv_obj_t *parent, lv_obj_t **cmd_out, lv_obj_t 
   return box;
 }
 
+static void on_gcode_item(lv_event_t *e) {
+  unsigned idx = (unsigned)(uintptr_t)lv_event_get_user_data(e);
+  if (idx >= gcode_entry_count) return;
+  const job_entry_t *ent = &gcode_entries[idx];
+  bool ok = load_job_from_store(ent->path);
+  if (gcode_status_lbl) {
+    char buf[96];
+    if (ok) {
+      const char *src = ent->src == JOB_SRC_SD       ? "SD"
+                        : ent->src == JOB_SRC_LITTLEFS ? "LFS"
+                                                       : "ROM";
+      snprintf(buf, sizeof(buf), "Loaded %s (%s) · %u segs", job_name, src, job_path_len);
+    } else {
+      snprintf(buf, sizeof(buf), "Failed: %s", ent->name);
+    }
+    lv_label_set_text(gcode_status_lbl, buf);
+  }
+}
+
+static void refresh_gcode_list() {
+  if (!gcode_list) return;
+  lv_obj_clean(gcode_list);
+  gcode_entry_count = job_store_list(gcode_entries, JOB_STORE_MAX_FILES);
+
+  for (unsigned i = 0; i < gcode_entry_count; i++) {
+    const job_entry_t *ent = &gcode_entries[i];
+    lv_obj_t *btn = lv_btn_create(gcode_list);
+    lv_obj_set_width(btn, LV_PCT(100));
+    lv_obj_set_height(btn, 44);
+    style_chrome_btn(btn, strcmp(ent->name, job_name) == 0);
+    lv_obj_t *lbl = lv_label_create(btn);
+    char line[80];
+    const char *src = ent->src == JOB_SRC_SD         ? "SD"
+                      : ent->src == JOB_SRC_LITTLEFS ? "LFS"
+                                                     : "ROM";
+    snprintf(line, sizeof(line), "%s  ·  %s  ·  %u B", ent->name, src, (unsigned)ent->size);
+    lv_label_set_text(lbl, line);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 8, 0);
+    lv_obj_add_event_cb(btn, on_gcode_item, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
+  }
+
+  if (gcode_status_lbl) {
+    char buf[96];
+    snprintf(buf, sizeof(buf), "Active: %s · %u segs · LFS %s · SD %s", job_name, job_path_len,
+             job_store_lfs_ok() ? "ok" : "—", job_store_sd_ok() ? "ok" : "—");
+    lv_label_set_text(gcode_status_lbl, buf);
+  }
+}
+
+static void refresh_probe_ui() {
+  for (int i = 0; i < 3; i++) {
+    if (probe_axis_btns[i]) style_chrome_btn(probe_axis_btns[i], i == active_axis);
+  }
+  if (probe_feed_lbl) {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "F %0.0f   travel %0.0f mm   %s", probe_feed, probe_travel,
+             probe_strict ? "G38.2" : "G38.3");
+    lv_label_set_text(probe_feed_lbl, buf);
+  }
+}
+
+static void on_probe_axis(lv_event_t *e) {
+  active_axis = (int)(intptr_t)lv_event_get_user_data(e);
+  refresh_probe_ui();
+  refresh_axes();
+}
+
+static void on_probe_feed_bump(lv_event_t *e) {
+  int d = (int)(intptr_t)lv_event_get_user_data(e);
+  probe_feed += (float)d;
+  if (probe_feed < 10) probe_feed = 10;
+  if (probe_feed > 2000) probe_feed = 2000;
+  refresh_probe_ui();
+}
+
+static void on_probe_strict(lv_event_t *e) {
+  (void)e;
+  probe_strict = !probe_strict;
+  refresh_probe_ui();
+}
+
+static void on_probe_zero(lv_event_t *e) {
+  (void)e;
+  // Zero WPos of active axis to last probe machine coord (G10 L20)
+  if (grbl_link_online()) {
+    grbl_link_zero_axis(active_axis);
+  } else if (probe_result_lbl) {
+    wpos[active_axis] = 0;
+    refresh_axes();
+    lv_label_set_text(probe_result_lbl, "Demo: WPos zeroed on axis");
+  }
+}
+
 static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
   path_w = w;
   path_h = h;
 
   load_sample_job();
-
-  float min_x = 1e9f, min_y = 1e9f, max_x = -1e9f, max_y = -1e9f;
-  for (unsigned i = 0; i < job_path_len; i++) {
-    if (job_path[i].x < min_x) min_x = job_path[i].x;
-    if (job_path[i].y < min_y) min_y = job_path[i].y;
-    if (job_path[i].x > max_x) max_x = job_path[i].x;
-    if (job_path[i].y > max_y) max_y = job_path[i].y;
-  }
-  if (job_path_len == 0) {
-    min_x = 0;
-    min_y = 0;
-    max_x = 80;
-    max_y = 50;
-  }
-  const float pad = 4.0f;
-  min_x -= pad;
-  min_y -= pad;
-  max_x += pad;
-  max_y += pad;
-  float bw = max_x - min_x;
-  float bh = max_y - min_y;
-  if (bw < 1) bw = 1;
-  if (bh < 1) bh = 1;
-  float sx = (float)(w - 4) / bw;
-  float sy = (float)(h - 4) / bh;
-  path_scale = sx < sy ? sx : sy;
-  path_min_x = min_x - ((w / path_scale) - bw) * 0.5f;
-  path_min_y = min_y - ((h / path_scale) - bh) * 0.5f;
+  recompute_path_bounds(w, h);
 
   lv_obj_t *frame = lv_obj_create(parent);
   lv_obj_set_size(frame, w, h);
@@ -629,13 +820,11 @@ static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
   lv_obj_set_style_radius(frame, 2, 0);
   lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t *hint = lv_label_create(frame);
-  char hint_buf[64];
-  snprintf(hint_buf, sizeof(hint_buf), "Job · %s", job_name);
-  lv_label_set_text(hint, hint_buf);
-  lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
-  lv_obj_set_style_text_color(hint, lv_color_hex(0x666666), 0);
-  lv_obj_set_pos(hint, 6, 4);
+  path_job_hint = lv_label_create(frame);
+  lv_obj_set_style_text_font(path_job_hint, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(path_job_hint, lv_color_hex(0x666666), 0);
+  lv_obj_set_pos(path_job_hint, 6, 4);
+  refresh_path_job_hint();
 
   size_t buf_sz = LV_CANVAS_BUF_SIZE_TRUE_COLOR(w, h);
   path_cbuf = (lv_color_t *)heap_caps_malloc(buf_sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -1004,19 +1193,179 @@ void ui_pendant_create() {
     lv_obj_set_pos(hint, 4, 140);
 
     lv_obj_t *hw = lv_label_create(settings_panel);
-    char hwbuf[96];
+    char hwbuf[160];
 #if (HANDWHEEL_A_GPIO >= 0) && (HANDWHEEL_B_GPIO >= 0)
-    snprintf(hwbuf, sizeof(hwbuf), "HANDWHEEL\nA=IO%d  B=IO%d\n%s", HANDWHEEL_A_GPIO,
+    snprintf(hwbuf, sizeof(hwbuf), "HANDWHEEL GPIO\nA=IO%d  B=IO%d\n%s", HANDWHEEL_A_GPIO,
              HANDWHEEL_B_GPIO, handwheel_hw_present() ? "ISR armed" : "not armed");
 #else
     snprintf(hwbuf, sizeof(hwbuf),
-             "HANDWHEEL\nPins disabled (−1)\nSet HANDWHEEL_A/B_GPIO\n(e.g. IO4/IO5)");
+             "HANDWHEEL GPIO\nPins disabled (−1)\nPrefer I2C expander when TF card is on");
 #endif
     lv_label_set_text(hw, hwbuf);
     lv_obj_set_style_text_font(hw, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hw, lv_color_hex(0xaaaaaa), 0);
     lv_obj_set_pos(hw, 4, 230);
+
+    lv_obj_t *exp = lv_label_create(settings_panel);
+    char expbuf[160];
+#if defined(I2C_MPG_ENABLE) && I2C_MPG_ENABLE
+    snprintf(expbuf, sizeof(expbuf), "I2C MPG  0x%02X\n%s\nP0/P1 wheel  P2–P4 axis  P5 step",
+             I2C_MPG_ADDR, i2c_mpg_present() ? "present" : "not found");
+#else
+    snprintf(expbuf, sizeof(expbuf),
+             "I2C MPG expander\nDisabled (I2C_MPG_ENABLE=0)\nPCF8574 on SDA15/SCL16");
+#endif
+    lv_label_set_text(exp, expbuf);
+    lv_obj_set_style_text_font(exp, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(exp, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(exp, 4, 300);
+
+    lv_obj_t *sd = lv_label_create(settings_panel);
+    char sdbuf[128];
+    snprintf(sdbuf, sizeof(sdbuf), "JOB STORE\nLittleFS %s\nSD/TF %s (DIP TF mode)",
+             job_store_lfs_ok() ? "ok" : "—", job_store_sd_ok() ? "mounted" : "—");
+    lv_label_set_text(sd, sdbuf);
+    lv_obj_set_style_text_font(sd, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(sd, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(sd, 4, 380);
     refresh_transport_ui();
+  }
+
+  // ----- GCODE panel -----
+  gcode_panel = lv_obj_create(content);
+  lv_obj_set_size(gcode_panel, UI_H_RES - 12, content_h - 8);
+  lv_obj_set_pos(gcode_panel, 0, 0);
+  lv_obj_set_style_bg_opa(gcode_panel, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(gcode_panel, 0, 0);
+  lv_obj_set_style_pad_all(gcode_panel, 4, 0);
+  lv_obj_clear_flag(gcode_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(gcode_panel, LV_OBJ_FLAG_HIDDEN);
+
+  {
+    lv_obj_t *cap = lv_label_create(gcode_panel);
+    lv_label_set_text(cap, "GCODE / JOBS");
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(cap, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(cap, 4, 4);
+
+    gcode_status_lbl = lv_label_create(gcode_panel);
+    lv_obj_set_style_text_font(gcode_status_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(gcode_status_lbl, lv_color_hex(0xdddddd), 0);
+    lv_label_set_long_mode(gcode_status_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(gcode_status_lbl, UI_H_RES - 28);
+    lv_obj_set_pos(gcode_status_lbl, 4, 28);
+    lv_label_set_text(gcode_status_lbl, "");
+
+    gcode_list = lv_obj_create(gcode_panel);
+    lv_obj_set_size(gcode_list, UI_H_RES - 20, content_h - 100);
+    lv_obj_set_pos(gcode_list, 0, 56);
+    lv_obj_set_style_bg_color(gcode_list, lv_color_hex(0x2a2a2a), 0);
+    lv_obj_set_style_border_width(gcode_list, 1, 0);
+    lv_obj_set_style_border_color(gcode_list, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_pad_all(gcode_list, 4, 0);
+    lv_obj_set_style_pad_row(gcode_list, 4, 0);
+    lv_obj_set_flex_flow(gcode_list, LV_FLEX_FLOW_COLUMN);
+  }
+
+  // ----- PROBE panel -----
+  probe_panel = lv_obj_create(content);
+  lv_obj_set_size(probe_panel, UI_H_RES - 12, content_h - 8);
+  lv_obj_set_pos(probe_panel, 0, 0);
+  lv_obj_set_style_bg_opa(probe_panel, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(probe_panel, 0, 0);
+  lv_obj_set_style_pad_all(probe_panel, 4, 0);
+  lv_obj_clear_flag(probe_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(probe_panel, LV_OBJ_FLAG_HIDDEN);
+
+  {
+    lv_obj_t *cap = lv_label_create(probe_panel);
+    lv_label_set_text(cap, "PROBE");
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(cap, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(cap, 4, 4);
+
+    lv_obj_t *ac = lv_label_create(probe_panel);
+    lv_label_set_text(ac, "AXIS");
+    lv_obj_set_style_text_font(ac, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(ac, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(ac, 4, 32);
+    int abw = (UI_H_RES - 12 - 16) / 3;
+    for (int i = 0; i < 3; i++) {
+      probe_axis_btns[i] = lv_btn_create(probe_panel);
+      lv_obj_set_size(probe_axis_btns[i], abw - 2, 52);
+      lv_obj_set_pos(probe_axis_btns[i], 4 + i * abw, 52);
+      style_chrome_btn(probe_axis_btns[i], i == active_axis);
+      lv_obj_t *l = lv_label_create(probe_axis_btns[i]);
+      lv_label_set_text(l, k_axis[i]);
+      lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(probe_axis_btns[i], on_probe_axis, LV_EVENT_CLICKED,
+                          (void *)(intptr_t)i);
+    }
+
+    probe_feed_lbl = lv_label_create(probe_panel);
+    lv_obj_set_style_text_font(probe_feed_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(probe_feed_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_pos(probe_feed_lbl, 4, 120);
+
+    const int bumps[] = {-50, -10, 10, 50};
+    const char *blabs[] = {"−50", "−10", "+10", "+50"};
+    int bbw = (UI_H_RES - 12 - 20) / 4;
+    for (int i = 0; i < 4; i++) {
+      lv_obj_t *b = lv_btn_create(probe_panel);
+      lv_obj_set_size(b, bbw - 2, 40);
+      lv_obj_set_pos(b, 4 + i * bbw, 150);
+      style_chrome_btn(b, false);
+      lv_obj_t *l = lv_label_create(b);
+      lv_label_set_text(l, blabs[i]);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(b, on_probe_feed_bump, LV_EVENT_CLICKED, (void *)(intptr_t)bumps[i]);
+    }
+
+    lv_obj_t *strict_btn = lv_btn_create(probe_panel);
+    lv_obj_set_size(strict_btn, (UI_H_RES - 20) / 2 - 4, 44);
+    lv_obj_set_pos(strict_btn, 4, 204);
+    style_chrome_btn(strict_btn, false);
+    lv_obj_t *sl = lv_label_create(strict_btn);
+    lv_label_set_text(sl, "G38.2 / G38.3");
+    lv_obj_set_style_text_font(sl, &lv_font_montserrat_14, 0);
+    lv_obj_center(sl);
+    lv_obj_add_event_cb(strict_btn, on_probe_strict, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *zero_btn = lv_btn_create(probe_panel);
+    lv_obj_set_size(zero_btn, (UI_H_RES - 20) / 2 - 4, 44);
+    lv_obj_set_pos(zero_btn, 4 + (UI_H_RES - 20) / 2, 204);
+    style_chrome_btn(zero_btn, false);
+    lv_obj_t *zl = lv_label_create(zero_btn);
+    lv_label_set_text(zl, "Zero WPos");
+    lv_obj_set_style_text_font(zl, &lv_font_montserrat_14, 0);
+    lv_obj_center(zl);
+    lv_obj_add_event_cb(zero_btn, on_probe_zero, LV_EVENT_CLICKED, NULL);
+
+    probe_contact_lbl = lv_label_create(probe_panel);
+    lv_obj_set_style_text_font(probe_contact_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(probe_contact_lbl, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(probe_contact_lbl, 4, 268);
+    lv_label_set_text(probe_contact_lbl, "Contact: —");
+
+    probe_result_lbl = lv_label_create(probe_panel);
+    lv_obj_set_style_text_font(probe_result_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(probe_result_lbl, lv_color_hex(0xdddddd), 0);
+    lv_label_set_long_mode(probe_result_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(probe_result_lbl, UI_H_RES - 28);
+    lv_obj_set_pos(probe_result_lbl, 4, 300);
+    lv_label_set_text(probe_result_lbl, "Last [PRB:]: none");
+
+    lv_obj_t *hint = lv_label_create(probe_panel);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(hint, UI_H_RES - 28);
+    lv_label_set_text(hint,
+                      "Soft Probe −/+ sends G38 toward WPos ± travel.\n"
+                      "Requires Idle + MPG. [PRB:] is machine coords.");
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(hint, 4, 360);
+    refresh_probe_ui();
   }
 
   other_panel = lv_obj_create(content);
@@ -1028,13 +1377,6 @@ void ui_pendant_create() {
   lv_obj_set_style_text_font(other_lbl, &lv_font_montserrat_20, 0);
   lv_obj_set_style_text_color(other_lbl, lv_color_hex(0xffffff), 0);
   lv_obj_center(other_lbl);
-  job_lbl = lv_label_create(other_panel);
-  lv_obj_set_style_text_font(job_lbl, &lv_font_montserrat_16, 0);
-  lv_obj_set_style_text_color(job_lbl, lv_color_hex(0xdddddd), 0);
-  lv_label_set_long_mode(job_lbl, LV_LABEL_LONG_WRAP);
-  lv_obj_set_width(job_lbl, UI_H_RES - 40);
-  lv_obj_align(job_lbl, LV_ALIGN_CENTER, 0, 0);
-  lv_label_set_text(job_lbl, "");
   lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
 
   status_bar = lv_obj_create(scr);
@@ -1104,8 +1446,23 @@ static void apply_handwheel() {
   }
 }
 
+static void apply_i2c_buttons() {
+  int ax = i2c_mpg_take_axis();
+  if (ax >= 0 && ax < 3) {
+    active_axis = ax;
+    refresh_axes();
+    if (page_idx == 2) refresh_power_feed_ui();
+    if (page_idx == 4) refresh_probe_ui();
+  }
+  if (i2c_mpg_take_step_cycle()) {
+    step_idx = (step_idx + 1) % 4;
+    refresh_steps();
+  }
+}
+
 void ui_pendant_tick() {
   apply_handwheel();
+  apply_i2c_buttons();
 
   static uint32_t last_ui_ms = 0;
   const uint32_t now = millis();
@@ -1114,10 +1471,15 @@ void ui_pendant_tick() {
 
   grbl_status_t st;
   if (!grbl_link_get_status(&st) || !st.online) {
-    char offline[48];
-    snprintf(offline, sizeof(offline), "Offline  ·  demo  ·  %s",
-             handwheel_hw_present() ? "MPG hw" : "mm");
+    char offline[64];
+    const char *hw = handwheel_hw_present() ? "MPG hw"
+                     : i2c_mpg_present()      ? "I2C MPG"
+                                              : "mm";
+    snprintf(offline, sizeof(offline), "Offline  ·  demo  ·  %s", hw);
     lv_label_set_text(state_lbl, offline);
+    if (page_idx == 4 && probe_contact_lbl) {
+      lv_label_set_text(probe_contact_lbl, "Contact: — (offline)");
+    }
     return;
   }
 
@@ -1137,6 +1499,23 @@ void ui_pendant_tick() {
   if (mpg_on != st.mpg_mode) {
     mpg_on = st.mpg_mode;
     refresh_mpg();
+  }
+
+  if (page_idx == 4) {
+    if (probe_contact_lbl) {
+      lv_label_set_text(probe_contact_lbl,
+                        st.probe_triggered ? "Contact: TRIGGERED" : "Contact: open");
+      lv_obj_set_style_text_color(
+          probe_contact_lbl, st.probe_triggered ? lv_color_hex(0xf59e0b) : lv_color_hex(0xaaaaaa),
+          0);
+    }
+    if (st.probe_fresh && probe_result_lbl) {
+      char buf[96];
+      snprintf(buf, sizeof(buf), "Last [PRB:]  %.3f, %.3f, %.3f  %s", st.probe_mpos[0],
+               st.probe_mpos[1], st.probe_mpos[2], st.probe_ok ? "ok" : "FAIL");
+      lv_label_set_text(probe_result_lbl, buf);
+      grbl_link_probe_ack();
+    }
   }
 
   char buf[48];

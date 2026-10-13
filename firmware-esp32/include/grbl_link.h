@@ -36,6 +36,19 @@ bool grbl_link_jog(int axis, float distance_mm, float feed_mm_min);
 /** Zero work position for one axis: `G90G10L20P0X0`. */
 bool grbl_link_zero_axis(int axis);
 
+/**
+ * Probe toward workpiece (G38.2 strict / G38.3 soft).
+ * `target_mm` is absolute machine/work position on that axis (G90).
+ * Clears probe_fresh before send; wait for [PRB:…] via status.
+ */
+bool grbl_link_probe_toward(int axis, float target_mm, float feed_mm_min, bool strict);
+
+/** Probe away from workpiece (G38.4). */
+bool grbl_link_probe_away(int axis, float target_mm, float feed_mm_min);
+
+/** Clear the probe_fresh latch after the UI has consumed a report. */
+void grbl_link_probe_ack(void);
+
 /** grblHAL realtime override bytes (0x90–0xA1). */
 typedef enum {
   GRBL_OV_FEED_RESET = 0,

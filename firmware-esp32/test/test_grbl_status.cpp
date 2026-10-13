@@ -36,6 +36,23 @@ int main() {
   assert(grbl_parse_status_line("<Idle|WPos:0,0,0|Ov:110,50,90|A:SFM|MPG:1>", &st));
   assert(st.feed_ov == 110 && st.rapid_ov == 50 && st.speed_ov == 90);
   assert(st.coolant_flood && st.coolant_mist);
+  assert(!st.probe_triggered);
+
+  memset(&st, 0, sizeof(st));
+  assert(grbl_parse_status_line("<Idle|WPos:0,0,0|Pn:P|MPG:1>", &st));
+  assert(st.probe_triggered);
+
+  memset(&st, 0, sizeof(st));
+  assert(grbl_parse_probe_line("[PRB:12.345,6.700,-1.250:1]", &st));
+  assert(near(st.probe_mpos[0], 12.345f));
+  assert(near(st.probe_mpos[1], 6.700f));
+  assert(near(st.probe_mpos[2], -1.250f));
+  assert(st.probe_ok && st.probe_fresh);
+
+  memset(&st, 0, sizeof(st));
+  assert(grbl_parse_probe_line("PRB:1,2,3:0\n", &st));
+  assert(near(st.probe_mpos[0], 1.0f));
+  assert(!st.probe_ok && st.probe_fresh);
 
   puts("test_grbl_status: ok");
   return 0;

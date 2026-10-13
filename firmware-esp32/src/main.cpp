@@ -11,6 +11,8 @@
 #include "backlight.h"
 #include "grbl_link.h"
 #include "handwheel.h"
+#include "i2c_mpg_io.h"
+#include "job_store.h"
 #include "ui_pendant.h"
 
 static LGFX gfx;
@@ -112,12 +114,15 @@ void setup() {
 
   grbl_link_begin();
   handwheel_begin();
+  i2c_mpg_begin();  // optional PCF8574 on same Wire bus as touch
+  job_store_begin();
   ui_pendant_create();
   Serial.printf("[ui] %dx%d ready\n", UI_H_RES, UI_V_RES);
 }
 
 void loop() {
   grbl_link_poll();
+  i2c_mpg_poll();
   handwheel_poll();
   lv_timer_handler();
   ui_pendant_tick();

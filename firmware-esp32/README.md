@@ -41,8 +41,11 @@ Use `crowpanel-advance-7-v12` if your board is an older Advance revision (differ
 * **G-code toolpath preview** — parses embedded `jobs/sample-badge.nc` (G0/G1/G2/G3, M3/M4/M5, S) into the MPG canvas
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
 * **MPG START** — green confirm button sends cycle start (`~`) so a job already on the controller can be released from the pendant
+* **PROBE** — axis select, G38.2/G38.3 toward WPos ± travel, live `Pn:P` contact, last `[PRB:]` machine coords, Zero WPos
+* **GCODE / jobs** — list + load embedded sample, LittleFS `/jobs`, and SD/TF `/jobs` into the toolpath preview
+* **I2C MPG expander** (optional) — PCF8574 on SDA15/SCL16 for handwheel A/B + axis/step buttons when GPIO is scarce
 
-LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. The pendant preview is from NC loaded/parsed on the pendant (`sample-badge.nc` or a file in the lab). Use **START** after the controller has the job (or is in Hold) to cycle-start from the device.
+LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. The pendant preview is from NC loaded/parsed on the pendant (embedded sample, LittleFS/SD `/jobs`, or a file in the lab). Use **START** after the controller has the job (or is in Hold) to cycle-start from the device.
 
 ### Wire to grblHAL (SKR / controller)
 
@@ -67,27 +70,39 @@ g++ -std=c++17 -I include -o /tmp/test_gcode_path \
   test/test_gcode_path.cpp src/gcode_path.cpp && /tmp/test_gcode_path
 g++ -std=c++17 -I include -o /tmp/test_mpg_framed \
   test/test_mpg_framed.cpp src/mpg_framed.cpp && /tmp/test_mpg_framed
+g++ -std=c++17 -I include -o /tmp/test_i2c_mpg_io \
+  test/test_i2c_mpg_io.cpp && /tmp/test_i2c_mpg_io
 ```
 
 ### Handwheel (MPG encoder)
 
 Stock pendant uses a **100 PPR** quadrature wheel on a timer channel. CrowPanel Advance has almost no free GPIO after the RGB bus + UART1, so A/B default to **disabled (`-1`)**.
 
-1. Free two 3.3 V inputs (common: reclaim **IO4 / IO5** when TF card & speaker are off — check rear DIP switches).
-2. In `include/pins_config.h` (or `build_flags`):
-   ```
-   -DHANDWHEEL_A_GPIO=4 -DHANDWHEEL_B_GPIO=5
-   ```
-3. Wire A/B (and GND). Internal pull-ups are enabled.
-4. With MPG on, each detent jogs the active axis by the selected step size.
+**Option A — direct GPIO** (when TF/speaker are unused):
 
-Without pins, the decode path still compiles; the layout lab exposes **◀ Wheel / Wheel ▶** as a stand-in.
+1. Free two 3.3 V inputs (common: reclaim **IO4 / IO5** — check rear DIP switches).
+2. Build with `-DHANDWHEEL_A_GPIO=4 -DHANDWHEEL_B_GPIO=5`.
+3. Wire A/B (and GND). Internal pull-ups are enabled.
+
+**Option B — I2C expander** (preferred when the TF card is in use — IO4–6 are SD):
+
+1. Wire a **PCF8574** (or compatible) on the touch I2C bus (**SDA15 / SCL16**), address `0x20` by default.
+2. Build with `-DI2C_MPG_ENABLE=1` (optional `-DI2C_MPG_ADDR=0x20`).
+3. Bit map: **P0/P1** = wheel A/B, **P2–P4** = axis X/Y/Z, **P5** = step-size cycle (active-low).
+
+With MPG on, each detent jogs the active axis by the selected step size. The layout lab exposes **◀ Wheel / Wheel ▶** as a stand-in.
+
+### SD / LittleFS jobs
+
+* LittleFS is mounted at boot (`board_build.filesystem = littlefs`). Seed files via `pio run -t uploadfs` from `data/jobs/`.
+* SD/TF uses SPI MOSI6/MISO4/SCK5 (CS often hard-tied). Set rear DIP switches to a **TF-card** mode. Disable with `-DJOB_STORE_SD=0` if you reclaim those pins for a GPIO handwheel.
+* GCODE tab lists embedded sample + `/jobs` on each mounted store; tap a row to parse into the MPG preview.
 
 ## Next (not in this slice)
 
-* Probe / program sender / SD or USB job load on device
+* Program sender (stream NC to grblHAL from the pendant)
 * Case / mounting for the 7″ panel + handwheel
-* Optional I2C GPIO expander for handwheel + axis-select buttons
+* Hardware smoke on CrowPanel + controller
 
 ## Layout lab
 

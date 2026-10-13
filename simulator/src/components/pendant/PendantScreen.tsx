@@ -45,6 +45,13 @@ export function PendantScreen({ profile, scale }: Props) {
   const [job, setJob] = useState(INITIAL_JOB);
   const [startFlash, setStartFlash] = useState(false);
   const [framedTransport, setFramedTransport] = useState(false);
+  const [probeFeed, setProbeFeed] = useState(100);
+  const [probeTravel] = useState(20);
+  const [probeStrict, setProbeStrict] = useState(true);
+  const [probeContact, setProbeContact] = useState(false);
+  const [probeResult, setProbeResult] = useState("Last [PRB:]: none");
+  const [lfsOk] = useState(true);
+  const [sdOk] = useState(false);
 
   const bumpOv = (
     kind: "feed" | "speed" | "rapid",
@@ -222,6 +229,8 @@ export function PendantScreen({ profile, scale }: Props) {
               name={job.name}
               segCount={job.path.length}
               warnings={job.warnings}
+              lfsOk={lfsOk}
+              sdOk={sdOk}
               onLoad={(name, nc) => {
                 const { path, warnings } = parseGcodeToolpath(nc);
                 setJob({ name, path, warnings, source: nc });
@@ -229,16 +238,62 @@ export function PendantScreen({ profile, scale }: Props) {
               onReloadSample={() => setJob(INITIAL_JOB)}
             />
           )}
+          {page === "PROBE" && (
+            <ProbeView
+              axes={axes}
+              activeAxis={activeAxis}
+              probeFeed={probeFeed}
+              probeTravel={probeTravel}
+              probeStrict={probeStrict}
+              probeContact={probeContact}
+              probeResult={probeResult}
+              onSelectAxis={setActiveAxis}
+              onFeed={setProbeFeed}
+              onToggleStrict={() => setProbeStrict((v) => !v)}
+              onProbe={(dir) => {
+                setAxes((prev) =>
+                  prev.map((a, i) =>
+                    i === activeAxis
+                      ? {
+                          ...a,
+                          wpos:
+                            Math.round((a.wpos + dir * probeTravel) * 1000) /
+                            1000,
+                        }
+                      : a
+                  )
+                );
+                setProbeContact(true);
+                const ax = axes[activeAxis];
+                const t = Math.round((ax.wpos + dir * probeTravel) * 1000) / 1000;
+                setProbeResult(
+                  `Demo PRB  M ${axes
+                    .map((a, i) =>
+                      (i === activeAxis ? t : a.wpos) + a.wco
+                    )
+                    .map((v) => v.toFixed(3))
+                    .join(", ")}  ok`
+                );
+              }}
+              onZero={() => {
+                zeroAxis(activeAxis);
+                setProbeResult("Demo: WPos zeroed on axis");
+              }}
+            />
+          )}
           {page === "SETTINGS" && (
             <SettingsView
               framed={framedTransport}
               onToggleFramed={() => setFramedTransport((v) => !v)}
+              lfsOk={lfsOk}
+              sdOk={sdOk}
             />
           )}
           {page !== "MPG" &&
             page !== "OVERRIDE" &&
             page !== "POWER FEED" &&
             page !== "GCODE" &&
+            page !== "PROBE" &&
             page !== "SETTINGS" && (
               <PlaceholderView title={page} profile={profile} />
             )}
@@ -324,21 +379,77 @@ export function PendantScreen({ profile, scale }: Props) {
               />
             </>
           )}
-          {page !== "MPG" && page !== "OVERRIDE" && page !== "POWER FEED" && (
+          {page === "GCODE" && (
+            <>
+              <SoftBtn label="Back" onClick={() => setPage("MPG")} />
+              <SoftBtn label="Refresh" onClick={() => undefined} />
+              <SoftBtn
+                label="Sample"
+                onClick={() => setJob(INITIAL_JOB)}
+              />
+            </>
+          )}
+          {page === "PROBE" && (
             <>
               <SoftBtn label="Back" onClick={() => setPage("MPG")} />
               <SoftBtn
-                label="Reset"
+                label="Probe −"
                 onClick={() => {
-                  setAxes(INITIAL_AXES);
-                  setFeedOverride(100);
-                  setSpeedOv(100);
-                  setRapidOv(100);
-                  setLaserCmd(650);
+                  setAxes((prev) =>
+                    prev.map((a, i) =>
+                      i === activeAxis
+                        ? {
+                            ...a,
+                            wpos:
+                              Math.round((a.wpos - probeTravel) * 1000) / 1000,
+                          }
+                        : a
+                    )
+                  );
+                  setProbeContact(true);
+                  setProbeResult("Demo PRB − travel ok");
+                }}
+              />
+              <SoftBtn
+                label="Probe +"
+                onClick={() => {
+                  setAxes((prev) =>
+                    prev.map((a, i) =>
+                      i === activeAxis
+                        ? {
+                            ...a,
+                            wpos:
+                              Math.round((a.wpos + probeTravel) * 1000) / 1000,
+                          }
+                        : a
+                    )
+                  );
+                  setProbeContact(true);
+                  setProbeResult("Demo PRB + travel ok");
                 }}
               />
             </>
           )}
+          {page !== "MPG" &&
+            page !== "OVERRIDE" &&
+            page !== "POWER FEED" &&
+            page !== "GCODE" &&
+            page !== "PROBE" && (
+              <>
+                <SoftBtn label="Back" onClick={() => setPage("MPG")} />
+                <SoftBtn
+                  label="Reset"
+                  onClick={() => {
+                    setAxes(INITIAL_AXES);
+                    setFeedOverride(100);
+                    setSpeedOv(100);
+                    setRapidOv(100);
+                    setLaserCmd(650);
+                    setProbeContact(false);
+                  }}
+                />
+              </>
+            )}
         </div>
       </div>
     </div>
@@ -932,12 +1043,16 @@ function GcodeView({
   name,
   segCount,
   warnings,
+  lfsOk,
+  sdOk,
   onLoad,
   onReloadSample,
 }: {
   name: string;
   segCount: number;
   warnings: string[];
+  lfsOk: boolean;
+  sdOk: boolean;
   onLoad: (name: string, nc: string) => void;
   onReloadSample: () => void;
 }) {
@@ -945,11 +1060,14 @@ function GcodeView({
     <div className="flex h-full flex-col gap-3 px-2 py-3 text-zinc-200">
       <div>
         <div className="text-[10px] uppercase tracking-widest text-zinc-400">
-          Loaded job
+          G-code / jobs
         </div>
         <div className="mt-0.5 text-sm font-semibold text-white">{name}</div>
         <div className="text-[11px] tabular-nums text-zinc-300">
           {segCount} path segments
+        </div>
+        <div className="mt-1 text-[10px] text-zinc-400">
+          LFS {lfsOk ? "ok" : "—"} · SD {sdOk ? "ok" : "—"} (lab: browser file)
         </div>
       </div>
       {warnings.length > 0 && (
@@ -957,6 +1075,10 @@ function GcodeView({
           {warnings.slice(0, 4).join(" · ")}
         </div>
       )}
+      <div className="rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px]">
+        <div className="font-semibold text-white">ROM · sample-badge.nc</div>
+        <div className="text-[10px] text-zinc-400">embedded · always listed on device</div>
+      </div>
       <label className="inline-flex cursor-pointer items-center justify-center rounded-sm border border-[#222] bg-[#2f2f2f] px-3 py-2 text-[11px] font-semibold text-white">
         Load .nc / .gcode
         <input
@@ -980,8 +1102,123 @@ function GcodeView({
         Reload sample-badge.nc
       </button>
       <p className="text-[10px] leading-relaxed text-zinc-400">
-        Preview parses G0/G1/G2/G3 with M3/M4/M5 and modal S. Cut moves (amber)
-        vs rapids (dashed) update the MPG job canvas.
+        On device: LittleFS `/jobs` + SD `/jobs` (TF DIP mode). Lab uses a
+        browser file picker; preview updates the MPG canvas.
+      </p>
+    </div>
+  );
+}
+
+function ProbeView({
+  axes,
+  activeAxis,
+  probeFeed,
+  probeTravel,
+  probeStrict,
+  probeContact,
+  probeResult,
+  onSelectAxis,
+  onFeed,
+  onToggleStrict,
+  onProbe,
+  onZero,
+}: {
+  axes: Axis[];
+  activeAxis: number;
+  probeFeed: number;
+  probeTravel: number;
+  probeStrict: boolean;
+  probeContact: boolean;
+  probeResult: string;
+  onSelectAxis: (i: number) => void;
+  onFeed: (v: number) => void;
+  onToggleStrict: () => void;
+  onProbe: (dir: 1 | -1) => void;
+  onZero: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col gap-2 px-2 py-2 text-zinc-200">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+        Probe
+      </div>
+      <div className="text-[9px] uppercase text-zinc-500">Axis</div>
+      <div className="grid grid-cols-3 gap-1">
+        {axes.map((a, i) => (
+          <button
+            key={a.name}
+            type="button"
+            onClick={() => onSelectAxis(i)}
+            className={cn(
+              "rounded-sm border border-[#222] py-3 text-sm font-bold text-white",
+              i === activeAxis ? "bg-[#3d5a80]" : "bg-[#2f2f2f]"
+            )}
+          >
+            {a.name}
+          </button>
+        ))}
+      </div>
+      <div className="text-[12px] tabular-nums text-white">
+        F {probeFeed} · travel {probeTravel} mm ·{" "}
+        {probeStrict ? "G38.2" : "G38.3"}
+      </div>
+      <div className="grid grid-cols-4 gap-1">
+        {[-50, -10, 10, 50].map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() =>
+              onFeed(Math.min(2000, Math.max(10, probeFeed + d)))
+            }
+            className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+          >
+            {d > 0 ? `+${d}` : d}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          type="button"
+          onClick={onToggleStrict}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+        >
+          G38.2 / G38.3
+        </button>
+        <button
+          type="button"
+          onClick={onZero}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+        >
+          Zero WPos
+        </button>
+      </div>
+      <div
+        className={cn(
+          "text-[13px] font-semibold",
+          probeContact ? "text-amber-400" : "text-zinc-400"
+        )}
+      >
+        Contact: {probeContact ? "TRIGGERED" : "open"}
+      </div>
+      <div className="text-[11px] leading-snug text-zinc-300">{probeResult}</div>
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          type="button"
+          onClick={() => onProbe(-1)}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+        >
+          Probe −
+        </button>
+        <button
+          type="button"
+          onClick={() => onProbe(1)}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+        >
+          Probe +
+        </button>
+      </div>
+      <p className="text-[10px] leading-relaxed text-zinc-400">
+        Soft Probe −/+ send G38 toward WPos ± travel. Requires Idle + MPG.
+        [PRB:] is always machine coordinates.
       </p>
     </div>
   );
@@ -990,9 +1227,13 @@ function GcodeView({
 function SettingsView({
   framed,
   onToggleFramed,
+  lfsOk,
+  sdOk,
 }: {
   framed: boolean;
   onToggleFramed: () => void;
+  lfsOk: boolean;
+  sdOk: boolean;
 }) {
   return (
     <div className="flex h-full flex-col gap-3 px-2 py-3 text-zinc-200">
@@ -1018,11 +1259,18 @@ function SettingsView({
         </p>
       </div>
       <div>
-        <div className="text-[9px] uppercase text-zinc-500">Handwheel</div>
+        <div className="text-[9px] uppercase text-zinc-500">Handwheel / I2C</div>
         <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-          CrowPanel has almost no free GPIO. Firmware defaults pins to −1;
-          set HANDWHEEL_A/B_GPIO (often IO4/IO5 when TF/speaker are off). Lab
-          uses ◀ Wheel / Wheel ▶ on the MPG page as a virtual encoder.
+          GPIO A/B default −1 (TF card claims IO4–6). Prefer PCF8574 on
+          SDA15/SCL16 (`I2C_MPG_ENABLE=1`, addr 0x20): P0/P1 wheel, P2–P4
+          axis, P5 step cycle. Lab uses ◀ Wheel / Wheel ▶ on MPG.
+        </p>
+      </div>
+      <div>
+        <div className="text-[9px] uppercase text-zinc-500">Job store</div>
+        <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+          LittleFS {lfsOk ? "ok" : "—"} · SD/TF {sdOk ? "mounted" : "—"} (lab
+          mocks LFS). Device lists embedded sample + `/jobs` on LFS and SD.
         </p>
       </div>
     </div>

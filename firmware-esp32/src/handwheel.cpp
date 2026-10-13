@@ -60,7 +60,7 @@ void handwheel_begin(void) {
 #endif
 
 void handwheel_poll(void) {
-  // ISR does the work; reserved for future PCNT / I2C expander polling
+  // GPIO path is ISR-driven; I2C expander path is polled from i2c_mpg_poll().
 }
 
 bool handwheel_hw_present(void) { return g_hw; }
