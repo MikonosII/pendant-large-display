@@ -396,17 +396,13 @@ function MpgView({
       </div>
 
       {roomy && (
-        <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
+        <div className="grid grid-cols-[1fr_2fr_1fr] gap-1">
           <TeleCell title="FEED mm/min" value={feedRate.toFixed(0)} />
-          <TeleCell
-            title="LASER CMD %"
-            value={`${Math.min(100, Math.max(0, Math.round((laserCmd / 1000) * 100)))}%`}
-            onClick={() => onLaser(10)}
-          />
-          <TeleCell
-            title="LASER ACT %"
-            value={`${Math.min(100, Math.max(0, Math.round((laserAct / 1000) * 100)))}%`}
-            onClick={() => onLaser(-10)}
+          <LaserPair
+            cmd={Math.min(100, Math.max(0, Math.round((laserCmd / 1000) * 100)))}
+            act={Math.min(100, Math.max(0, Math.round((laserAct / 1000) * 100)))}
+            onCmd={() => onLaser(10)}
+            onAct={() => onLaser(-10)}
           />
           <TeleCell
             title="OVERRIDES"
@@ -455,7 +451,7 @@ function TeleCell({
       <div className="text-[8px] uppercase tracking-wider text-zinc-400">
         {title}
       </div>
-      <div className="text-[12px] font-semibold tabular-nums text-white">
+      <div className="text-right text-[12px] font-semibold tabular-nums text-white">
         {value}
       </div>
     </>
@@ -474,6 +470,49 @@ function TeleCell({
   return (
     <div className="rounded-sm border border-[#111] bg-[#2a2a2a] px-1.5 py-1 text-left">
       {body}
+    </div>
+  );
+}
+
+function LaserPair({
+  cmd,
+  act,
+  onCmd,
+  onAct,
+}: {
+  cmd: number;
+  act: number;
+  onCmd: () => void;
+  onAct: () => void;
+}) {
+  const fmt = (n: number) => `${String(n).padStart(3, "\u00A0")}%`;
+  return (
+    <div className="rounded-sm border border-[#111] bg-[#2a2a2a] px-1.5 py-1">
+      <div className="text-[8px] uppercase tracking-wider text-zinc-400">
+        Laser
+      </div>
+      <div className="mt-0.5 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onCmd}
+          className="flex items-baseline justify-between gap-1 text-left"
+        >
+          <span className="text-[8px] uppercase text-zinc-500">Cmd</span>
+          <span className="whitespace-pre text-[12px] font-semibold tabular-nums text-white">
+            {fmt(cmd)}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onAct}
+          className="flex items-baseline justify-between gap-1 text-left"
+        >
+          <span className="text-[8px] uppercase text-zinc-500">Act</span>
+          <span className="whitespace-pre text-[12px] font-semibold tabular-nums text-white">
+            {fmt(act)}
+          </span>
+        </button>
+      </div>
     </div>
   );
 }

@@ -103,24 +103,22 @@ static void update_head() {
                             laser_s_cmd > 0 ? lv_color_hex(0xef4444) : lv_color_hex(0x38bdf8), 0);
 }
 
+static int laser_pct(float s) {
+  int pct = (int)((s * 100.0f) / laser_s_max + 0.5f);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return pct;
+}
+
 static void refresh_telemetry() {
   char buf[48];
   snprintf(buf, sizeof(buf), "F %0.0f", feed_mm_min);
   lv_label_set_text(feed_lbl, buf);
-  {
-    int pct = (int)((laser_s_cmd * 100.0f) / laser_s_max + 0.5f);
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    snprintf(buf, sizeof(buf), "%d%%", pct);
-    lv_label_set_text(laser_cmd_lbl, buf);
-  }
-  {
-    int pct = (int)((laser_s_act * 100.0f) / laser_s_max + 0.5f);
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    snprintf(buf, sizeof(buf), "%d%%", pct);
-    lv_label_set_text(laser_act_lbl, buf);
-  }
+  // Fixed-width so CMD / ACT columns stay aligned (e.g. " 65%" / "100%")
+  snprintf(buf, sizeof(buf), "%3d%%", laser_pct(laser_s_cmd));
+  lv_label_set_text(laser_cmd_lbl, buf);
+  snprintf(buf, sizeof(buf), "%3d%%", laser_pct(laser_s_act));
+  lv_label_set_text(laser_act_lbl, buf);
   snprintf(buf, sizeof(buf), "Ov F%d S%d R%d", feed_ov, speed_ov, rapid_ov);
   lv_label_set_text(ov_lbl, buf);
   update_head();
@@ -245,7 +243,62 @@ static lv_obj_t *make_telemetry_cell(lv_obj_t *parent, const char *title, lv_obj
   *value_out = lv_label_create(box);
   lv_obj_set_style_text_font(*value_out, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(*value_out, lv_color_hex(0xffffff), 0);
-  lv_obj_align(*value_out, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+  lv_obj_align(*value_out, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+  return box;
+}
+
+/** Paired CMD / ACT % columns that share one LASER header so values line up. */
+static lv_obj_t *make_laser_pair(lv_obj_t *parent, lv_obj_t **cmd_out, lv_obj_t **act_out) {
+  lv_obj_t *box = lv_obj_create(parent);
+  lv_obj_set_flex_grow(box, 2);
+  lv_obj_set_height(box, LV_PCT(100));
+  lv_obj_set_style_bg_color(box, lv_color_hex(0x2a2a2a), 0);
+  lv_obj_set_style_border_width(box, 1, 0);
+  lv_obj_set_style_border_color(box, lv_color_hex(0x111111), 0);
+  lv_obj_set_style_radius(box, 2, 0);
+  lv_obj_set_style_pad_all(box, 3, 0);
+  lv_obj_set_style_pad_column(box, 8, 0);
+  lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *title = lv_label_create(box);
+  lv_label_set_text(title, "LASER");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(title, lv_color_hex(0xaaaaaa), 0);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  lv_obj_t *row = lv_obj_create(box);
+  lv_obj_set_size(row, LV_PCT(100), 22);
+  lv_obj_align(row, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(row, 0, 0);
+  lv_obj_set_style_pad_all(row, 0, 0);
+  lv_obj_set_style_pad_column(row, 6, 0);
+  lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+  for (int i = 0; i < 2; i++) {
+    lv_obj_t *col = lv_obj_create(row);
+    lv_obj_set_flex_grow(col, 1);
+    lv_obj_set_height(col, LV_PCT(100));
+    lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(col, 0, 0);
+    lv_obj_set_style_pad_all(col, 0, 0);
+    lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *tag = lv_label_create(col);
+    lv_label_set_text(tag, i == 0 ? "CMD" : "ACT");
+    lv_obj_set_style_text_font(tag, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(tag, lv_color_hex(0x888888), 0);
+    lv_obj_align(tag, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t *val = lv_label_create(col);
+    lv_obj_set_style_text_font(val, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(val, lv_color_hex(0xffffff), 0);
+    lv_obj_align(val, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (i == 0) *cmd_out = val;
+    else *act_out = val;
+  }
   return box;
 }
 
@@ -417,12 +470,9 @@ void ui_pendant_create() {
   lv_obj_set_flex_flow(tele, LV_FLEX_FLOW_ROW);
 
   make_telemetry_cell(tele, "FEED", &feed_lbl);
-  lv_obj_t *laser_box = make_telemetry_cell(tele, "LASER CMD %", &laser_cmd_lbl);
+  lv_obj_t *laser_box = make_laser_pair(tele, &laser_cmd_lbl, &laser_act_lbl);
   lv_obj_add_flag(laser_box, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(laser_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)1);
-  lv_obj_t *act_box = make_telemetry_cell(tele, "LASER ACT %", &laser_act_lbl);
-  lv_obj_add_flag(act_box, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(act_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
   make_telemetry_cell(tele, "OV", &ov_lbl);
 
   const int step_y = tele_y + 62;
