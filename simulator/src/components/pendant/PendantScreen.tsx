@@ -5,12 +5,12 @@ import type { PageId, ScreenProfile } from "@/lib/screen-profiles";
 import { PAGES } from "@/lib/screen-profiles";
 import { cn } from "@/lib/utils";
 
-type Axis = { name: string; value: number };
+type Axis = { name: string; wpos: number; wco: number };
 
 const INITIAL_AXES: Axis[] = [
-  { name: "X", value: 12.34 },
-  { name: "Y", value: -45.678 },
-  { name: "Z", value: 3.2 },
+  { name: "X", wpos: 12.34, wco: 10 },
+  { name: "Y", wpos: -45.678, wco: 20 },
+  { name: "Z", wpos: 3.2, wco: 0 },
 ];
 
 type Props = {
@@ -25,6 +25,10 @@ export function PendantScreen({ profile, scale }: Props) {
   const [feedOverride, setFeedOverride] = useState(100);
   const [activeAxis, setActiveAxis] = useState(0);
   const [step, setStep] = useState(0.1);
+  const [feedRate, setFeedRate] = useState(1200);
+  const [laserCmd, setLaserCmd] = useState(650);
+  const [speedOv, setSpeedOv] = useState(100);
+  const [rapidOv] = useState(100);
 
   const contentH = useMemo(() => {
     const statusH = 32 + 2;
@@ -35,14 +39,26 @@ export function PendantScreen({ profile, scale }: Props) {
     setAxes((prev) =>
       prev.map((a, i) =>
         i === activeAxis
-          ? { ...a, value: Math.round((a.value + dir * step) * 1000) / 1000 }
+          ? {
+              ...a,
+              wpos: Math.round((a.wpos + dir * step) * 1000) / 1000,
+            }
           : a
+      )
+    );
+    setFeedRate((f) => Math.max(0, f + dir * 10));
+  };
+
+  const zeroAxis = (i: number) => {
+    setAxes((prev) =>
+      prev.map((a, idx) =>
+        idx === i ? { ...a, wco: a.wco + a.wpos, wpos: 0 } : a
       )
     );
   };
 
-  // Use CSS zoom (not transform:scale) so hit-testing matches the painted
-  // pixels — transform leaves the layout box at 1× and breaks clicks.
+  const laserAct = Math.max(0, laserCmd - 2);
+
   return (
     <div
       className="relative overflow-hidden rounded-sm shadow-[0_20px_60px_rgba(0,0,0,0.45)] ring-1 ring-black/40"
@@ -60,7 +76,6 @@ export function PendantScreen({ profile, scale }: Props) {
           zoom: scale,
         }}
       >
-        {/* Header tabs */}
         <div
           className="flex border-b border-black/50 bg-[#1e1e1e]"
           style={{ height: profile.headerH }}
@@ -82,7 +97,6 @@ export function PendantScreen({ profile, scale }: Props) {
           ))}
         </div>
 
-        {/* Content */}
         <div
           className="relative overflow-hidden bg-[#404040] px-1.5 py-1"
           style={{ height: contentH }}
@@ -92,15 +106,27 @@ export function PendantScreen({ profile, scale }: Props) {
               axes={axes}
               activeAxis={activeAxis}
               step={step}
+              feedRate={feedRate}
+              laserCmd={laserCmd}
+              laserAct={laserAct}
+              feedOv={feedOverride}
+              speedOv={speedOv}
+              rapidOv={rapidOv}
+              roomy={profile.logicalW >= 480}
               onSelectAxis={setActiveAxis}
               onStep={setStep}
-              profile={profile}
+              onZero={zeroAxis}
+              onLaser={(d) =>
+                setLaserCmd((s) => Math.min(1000, Math.max(0, s + d)))
+              }
             />
           )}
           {page === "OVERRIDE" && (
             <OverrideView
               feed={feedOverride}
-              onChange={setFeedOverride}
+              speed={speedOv}
+              onFeed={setFeedOverride}
+              onSpeed={setSpeedOv}
             />
           )}
           {page !== "MPG" && page !== "OVERRIDE" && (
@@ -108,14 +134,13 @@ export function PendantScreen({ profile, scale }: Props) {
           )}
         </div>
 
-        {/* Status + MPG */}
         <div className="flex items-stretch border-t border-black/40 bg-[#555]">
           <div className="flex min-w-0 flex-1 flex-col justify-center px-2 py-1">
             <div className="text-[13px] font-bold leading-none text-white">
               Idle
             </div>
             <div className="mt-0.5 truncate text-[9px] text-zinc-200">
-              WPos · mm · {profile.shortName}
+              Laser · mm · {profile.shortName}
             </div>
           </div>
           <button
@@ -130,7 +155,6 @@ export function PendantScreen({ profile, scale }: Props) {
           </button>
         </div>
 
-        {/* Soft buttons */}
         <div
           className="flex gap-px bg-black"
           style={{ height: profile.softBtnH }}
@@ -151,6 +175,8 @@ export function PendantScreen({ profile, scale }: Props) {
               onClick={() => {
                 setAxes(INITIAL_AXES);
                 setFeedOverride(100);
+                setSpeedOv(100);
+                setLaserCmd(650);
               }}
             />
           )}
@@ -182,30 +208,51 @@ function MpgView({
   axes,
   activeAxis,
   step,
+  feedRate,
+  laserCmd,
+  laserAct,
+  feedOv,
+  speedOv,
+  rapidOv,
+  roomy,
   onSelectAxis,
   onStep,
-  profile,
+  onZero,
+  onLaser,
 }: {
   axes: Axis[];
   activeAxis: number;
   step: number;
+  feedRate: number;
+  laserCmd: number;
+  laserAct: number;
+  feedOv: number;
+  speedOv: number;
+  rapidOv: number;
+  roomy: boolean;
   onSelectAxis: (i: number) => void;
   onStep: (s: number) => void;
-  profile: ScreenProfile;
+  onZero: (i: number) => void;
+  onLaser: (d: number) => void;
 }) {
   const steps = [0.01, 0.1, 1, 10];
-  const roomy = profile.logicalW >= 480;
 
   return (
     <div className="flex h-full flex-col gap-1">
+      {roomy && (
+        <div className="px-10 text-[9px] uppercase tracking-wider text-zinc-400">
+          WPos&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MPos
+        </div>
+      )}
+
       {axes.map((axis, i) => (
         <button
           key={axis.name}
           type="button"
           onClick={() => onSelectAxis(i)}
           className={cn(
-            "flex items-center justify-between rounded-sm border px-2 transition-colors",
-            roomy ? "py-3" : "py-2",
+            "flex items-center gap-2 rounded-sm border px-2 text-left transition-colors",
+            roomy ? "py-2.5" : "py-2",
             i === activeAxis
               ? "border-amber-400 bg-[#1f1f1f]"
               : "border-[#222] bg-[#333]"
@@ -213,22 +260,66 @@ function MpgView({
         >
           <span
             className={cn(
-              "font-bold text-amber-300",
+              "w-6 shrink-0 font-bold text-amber-300",
               roomy ? "text-xl" : "text-base"
             )}
           >
             {axis.name}
           </span>
-          <span
-            className={cn(
-              "tabular-nums text-white",
-              roomy ? "text-2xl" : "text-lg"
+          <div className="min-w-0 flex-1">
+            <div
+              className={cn(
+                "tabular-nums text-white",
+                roomy ? "text-xl" : "text-lg"
+              )}
+            >
+              {axis.wpos.toFixed(3)}
+            </div>
+            {roomy && (
+              <div className="text-[11px] tabular-nums text-sky-300/90">
+                M {(axis.wpos + axis.wco).toFixed(3)}
+              </div>
             )}
+          </div>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onZero(i);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                onZero(i);
+              }
+            }}
+            className="rounded-sm border border-[#111] bg-[#2f2f2f] px-2 py-2 text-[11px] font-semibold text-white"
           >
-            {axis.value.toFixed(3)}
+            {"<0>"}
           </span>
         </button>
       ))}
+
+      {roomy && (
+        <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-4">
+          <TeleCell title="FEED mm/min" value={feedRate.toFixed(0)} />
+          <TeleCell
+            title="LASER S cmd"
+            value={laserCmd.toFixed(0)}
+            onClick={() => onLaser(10)}
+          />
+          <TeleCell
+            title="LASER S act"
+            value={laserAct.toFixed(0)}
+            onClick={() => onLaser(-10)}
+          />
+          <TeleCell
+            title="OVERRIDES"
+            value={`F${feedOv} S${speedOv} R${rapidOv}`}
+          />
+        </div>
+      )}
 
       <div className="mt-auto">
         <div className="mb-1 text-[9px] uppercase tracking-wider text-zinc-300">
@@ -256,32 +347,93 @@ function MpgView({
   );
 }
 
+function TeleCell({
+  title,
+  value,
+  onClick,
+}: {
+  title: string;
+  value: string;
+  onClick?: () => void;
+}) {
+  const body = (
+    <>
+      <div className="text-[8px] uppercase tracking-wider text-zinc-400">
+        {title}
+      </div>
+      <div className="text-[12px] font-semibold tabular-nums text-white">
+        {value}
+      </div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-sm border border-[#111] bg-[#2a2a2a] px-1.5 py-1 text-left"
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className="rounded-sm border border-[#111] bg-[#2a2a2a] px-1.5 py-1 text-left">
+      {body}
+    </div>
+  );
+}
+
 function OverrideView({
   feed,
-  onChange,
+  speed,
+  onFeed,
+  onSpeed,
 }: {
   feed: number;
-  onChange: (n: number) => void;
+  speed: number;
+  onFeed: (n: number) => void;
+  onSpeed: (n: number) => void;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-300">
-        Feed override
+    <div className="flex h-full flex-col items-center justify-center gap-4">
+      <div className="text-center">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-300">
+          Feed override
+        </div>
+        <div className="text-3xl font-bold tabular-nums text-white">{feed}%</div>
+        <div className="mt-1 flex justify-center gap-2">
+          {[-10, -1, 1, 10].map((d) => (
+            <button
+              key={`f${d}`}
+              type="button"
+              onClick={() => onFeed(Math.min(200, Math.max(10, feed + d)))}
+              className="min-w-10 rounded-sm border border-[#222] bg-[#2f2f2f] px-2 py-1 text-sm font-semibold text-white"
+            >
+              {d > 0 ? `+${d}` : d}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="text-4xl font-bold tabular-nums text-white">{feed}%</div>
-      <div className="flex gap-2">
-        {[-10, -1, 1, 10].map((d) => (
-          <button
-            key={d}
-            type="button"
-            onClick={() =>
-              onChange(Math.min(200, Math.max(10, feed + d)))
-            }
-            className="min-w-12 rounded-sm border border-[#222] bg-[#2f2f2f] px-3 py-2 text-sm font-semibold text-white"
-          >
-            {d > 0 ? `+${d}` : d}
-          </button>
-        ))}
+      <div className="text-center">
+        <div className="text-[10px] uppercase tracking-widest text-zinc-300">
+          Laser / spindle override
+        </div>
+        <div className="text-3xl font-bold tabular-nums text-white">
+          {speed}%
+        </div>
+        <div className="mt-1 flex justify-center gap-2">
+          {[-10, -1, 1, 10].map((d) => (
+            <button
+              key={`s${d}`}
+              type="button"
+              onClick={() => onSpeed(Math.min(200, Math.max(10, speed + d)))}
+              className="min-w-10 rounded-sm border border-[#222] bg-[#2f2f2f] px-2 py-1 text-sm font-semibold text-white"
+            >
+              {d > 0 ? `+${d}` : d}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
