@@ -32,6 +32,11 @@ int main() {
   assert(near(st.wpos[0], 9.0f));
   assert(!st.mpg_mode);
 
+  memset(&st, 0, sizeof(st));
+  assert(grbl_parse_status_line("<Idle|WPos:0,0,0|Ov:110,50,90|A:SFM|MPG:1>", &st));
+  assert(st.feed_ov == 110 && st.rapid_ov == 50 && st.speed_ov == 90);
+  assert(st.coolant_flood && st.coolant_mist);
+
   puts("test_grbl_status: ok");
   return 0;
 }

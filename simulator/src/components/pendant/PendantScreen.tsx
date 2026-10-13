@@ -40,8 +40,37 @@ export function PendantScreen({ profile, scale }: Props) {
   const [feedRate, setFeedRate] = useState(1200);
   const [laserCmd, setLaserCmd] = useState(650);
   const [speedOv, setSpeedOv] = useState(100);
-  const [rapidOv] = useState(100);
+  const [rapidOv, setRapidOv] = useState(100);
+  const [powerFeed, setPowerFeed] = useState(300);
   const [job, setJob] = useState(INITIAL_JOB);
+
+  const bumpOv = (
+    kind: "feed" | "speed" | "rapid",
+    cmd:
+      | "reset"
+      | "coarse+"
+      | "coarse-"
+      | "fine+"
+      | "fine-"
+      | "25"
+      | "50"
+  ) => {
+    const apply = (v: number, d: number) =>
+      Math.min(200, Math.max(10, v + d));
+    if (kind === "rapid") {
+      if (cmd === "reset") setRapidOv(100);
+      else if (cmd === "50") setRapidOv(50);
+      else if (cmd === "25") setRapidOv(25);
+      return;
+    }
+    const set = kind === "feed" ? setFeedOverride : setSpeedOv;
+    const cur = kind === "feed" ? feedOverride : speedOv;
+    if (cmd === "reset") set(100);
+    else if (cmd === "coarse+") set(apply(cur, 10));
+    else if (cmd === "coarse-") set(apply(cur, -10));
+    else if (cmd === "fine+") set(apply(cur, 1));
+    else if (cmd === "fine-") set(apply(cur, -1));
+  };
 
   const contentH = useMemo(() => {
     const statusH = 32 + 2;
@@ -140,8 +169,30 @@ export function PendantScreen({ profile, scale }: Props) {
             <OverrideView
               feed={feedOverride}
               speed={speedOv}
-              onFeed={setFeedOverride}
-              onSpeed={setSpeedOv}
+              rapid={rapidOv}
+              onOv={bumpOv}
+            />
+          )}
+          {page === "POWER FEED" && (
+            <FeedView
+              axes={axes}
+              activeAxis={activeAxis}
+              powerFeed={powerFeed}
+              onSelectAxis={setActiveAxis}
+              onFeed={setPowerFeed}
+              onJog={(dir) => {
+                setAxes((prev) =>
+                  prev.map((a, i) =>
+                    i === activeAxis
+                      ? {
+                          ...a,
+                          wpos:
+                            Math.round((a.wpos + dir * 5) * 1000) / 1000,
+                        }
+                      : a
+                  )
+                );
+              }}
             />
           )}
           {page === "GCODE" && (
@@ -156,9 +207,12 @@ export function PendantScreen({ profile, scale }: Props) {
               onReloadSample={() => setJob(INITIAL_JOB)}
             />
           )}
-          {page !== "MPG" && page !== "OVERRIDE" && page !== "GCODE" && (
-            <PlaceholderView title={page} profile={profile} />
-          )}
+          {page !== "MPG" &&
+            page !== "OVERRIDE" &&
+            page !== "POWER FEED" &&
+            page !== "GCODE" && (
+              <PlaceholderView title={page} profile={profile} />
+            )}
         </div>
 
         <div className="flex items-stretch border-t border-black/40 bg-[#555]">
@@ -186,26 +240,75 @@ export function PendantScreen({ profile, scale }: Props) {
           className="flex gap-px bg-black"
           style={{ height: profile.softBtnH }}
         >
-          <SoftBtn
-            label={page === "MPG" ? "Hold" : "Back"}
-            onClick={() => setPage("MPG")}
-          />
           {page === "MPG" && (
             <>
+              <SoftBtn label="Hold" onClick={() => setPage("MPG")} />
               <SoftBtn label="− Jog" onClick={() => jog(-1)} />
               <SoftBtn label="+ Jog" onClick={() => jog(1)} />
             </>
           )}
-          {page !== "MPG" && (
-            <SoftBtn
-              label="Reset"
-              onClick={() => {
-                setAxes(INITIAL_AXES);
-                setFeedOverride(100);
-                setSpeedOv(100);
-                setLaserCmd(650);
-              }}
-            />
+          {page === "OVERRIDE" && (
+            <>
+              <SoftBtn label="Back" onClick={() => setPage("MPG")} />
+              <SoftBtn
+                label="F −10"
+                onClick={() => bumpOv("feed", "coarse-")}
+              />
+              <SoftBtn
+                label="F +10"
+                onClick={() => bumpOv("feed", "coarse+")}
+              />
+            </>
+          )}
+          {page === "POWER FEED" && (
+            <>
+              <SoftBtn label="Stop" onClick={() => setPage("MPG")} />
+              <SoftBtn
+                label="− Feed"
+                onClick={() => {
+                  setAxes((prev) =>
+                    prev.map((a, i) =>
+                      i === activeAxis
+                        ? {
+                            ...a,
+                            wpos: Math.round((a.wpos - 5) * 1000) / 1000,
+                          }
+                        : a
+                    )
+                  );
+                }}
+              />
+              <SoftBtn
+                label="+ Feed"
+                onClick={() => {
+                  setAxes((prev) =>
+                    prev.map((a, i) =>
+                      i === activeAxis
+                        ? {
+                            ...a,
+                            wpos: Math.round((a.wpos + 5) * 1000) / 1000,
+                          }
+                        : a
+                    )
+                  );
+                }}
+              />
+            </>
+          )}
+          {page !== "MPG" && page !== "OVERRIDE" && page !== "POWER FEED" && (
+            <>
+              <SoftBtn label="Back" onClick={() => setPage("MPG")} />
+              <SoftBtn
+                label="Reset"
+                onClick={() => {
+                  setAxes(INITIAL_AXES);
+                  setFeedOverride(100);
+                  setSpeedOv(100);
+                  setRapidOv(100);
+                  setLaserCmd(650);
+                }}
+              />
+            </>
           )}
         </div>
       </div>
@@ -554,56 +657,206 @@ function LaserPair({
   );
 }
 
+function OvRow({
+  title,
+  value,
+  kind,
+  onOv,
+}: {
+  title: string;
+  value: number;
+  kind: "feed" | "speed";
+  onOv: (
+    kind: "feed" | "speed" | "rapid",
+    cmd:
+      | "reset"
+      | "coarse+"
+      | "coarse-"
+      | "fine+"
+      | "fine-"
+      | "25"
+      | "50"
+  ) => void;
+}) {
+  const btns: {
+    label: string;
+    cmd: "coarse-" | "fine-" | "reset" | "fine+" | "coarse+";
+  }[] = [
+    { label: "−10", cmd: "coarse-" },
+    { label: "−1", cmd: "fine-" },
+    { label: "100", cmd: "reset" },
+    { label: "+1", cmd: "fine+" },
+    { label: "+10", cmd: "coarse+" },
+  ];
+  return (
+    <div className="w-full">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+        {title}
+      </div>
+      <div className="text-3xl font-bold tabular-nums text-white">{value}%</div>
+      <div className="mt-1 grid grid-cols-5 gap-1">
+        {btns.map((b) => (
+          <button
+            key={b.label}
+            type="button"
+            onClick={() => onOv(kind, b.cmd)}
+            className={cn(
+              "rounded-sm border border-[#222] py-1.5 text-[11px] font-semibold text-white",
+              b.cmd === "reset" ? "bg-[#3d5a80]" : "bg-[#2f2f2f]"
+            )}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function OverrideView({
   feed,
   speed,
-  onFeed,
-  onSpeed,
+  rapid,
+  onOv,
 }: {
   feed: number;
   speed: number;
-  onFeed: (n: number) => void;
-  onSpeed: (n: number) => void;
+  rapid: number;
+  onOv: (
+    kind: "feed" | "speed" | "rapid",
+    cmd:
+      | "reset"
+      | "coarse+"
+      | "coarse-"
+      | "fine+"
+      | "fine-"
+      | "25"
+      | "50"
+  ) => void;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4">
-      <div className="text-center">
-        <div className="text-[10px] uppercase tracking-widest text-zinc-300">
-          Feed override
+    <div className="flex h-full flex-col gap-4 overflow-y-auto px-1 py-2">
+      <OvRow title="Feed override" value={feed} kind="feed" onOv={onOv} />
+      <OvRow
+        title="Laser / spindle"
+        value={speed}
+        kind="speed"
+        onOv={onOv}
+      />
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+          Rapid
         </div>
-        <div className="text-3xl font-bold tabular-nums text-white">{feed}%</div>
-        <div className="mt-1 flex justify-center gap-2">
-          {[-10, -1, 1, 10].map((d) => (
+        <div className="text-2xl font-bold tabular-nums text-white">
+          {rapid}%
+        </div>
+        <div className="mt-1 grid grid-cols-3 gap-1">
+          {(
+            [
+              ["25%", "25"],
+              ["50%", "50"],
+              ["100%", "reset"],
+            ] as const
+          ).map(([label, cmd]) => (
             <button
-              key={`f${d}`}
+              key={label}
               type="button"
-              onClick={() => onFeed(Math.min(200, Math.max(10, feed + d)))}
-              className="min-w-10 rounded-sm border border-[#222] bg-[#2f2f2f] px-2 py-1 text-sm font-semibold text-white"
+              onClick={() => onOv("rapid", cmd)}
+              className={cn(
+                "rounded-sm border border-[#222] py-1.5 text-[11px] font-semibold text-white",
+                cmd === "reset" ? "bg-[#3d5a80]" : "bg-[#2f2f2f]"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[9px] leading-snug text-zinc-500">
+          Sends grblHAL realtime bytes (0x90–0x9D). Offline lab adjusts locally.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FeedView({
+  axes,
+  activeAxis,
+  powerFeed,
+  onSelectAxis,
+  onFeed,
+  onJog,
+}: {
+  axes: Axis[];
+  activeAxis: number;
+  powerFeed: number;
+  onSelectAxis: (i: number) => void;
+  onFeed: (n: number) => void;
+  onJog: (dir: 1 | -1) => void;
+}) {
+  return (
+    <div className="flex h-full flex-col gap-3 px-1 py-2">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+        Power feed
+      </div>
+      <div>
+        <div className="mb-1 text-[9px] uppercase text-zinc-500">Axis</div>
+        <div className="grid grid-cols-3 gap-1">
+          {axes.map((a, i) => (
+            <button
+              key={a.name}
+              type="button"
+              onClick={() => onSelectAxis(i)}
+              className={cn(
+                "rounded-sm border py-3 text-sm font-bold",
+                i === activeAxis
+                  ? "border-amber-400 bg-[#3d5a80] text-white"
+                  : "border-[#222] bg-[#2f2f2f] text-zinc-200"
+              )}
+            >
+              {a.name}
+              <div className="text-[10px] font-normal tabular-nums text-zinc-300">
+                {a.wpos.toFixed(3)}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="text-[9px] uppercase text-zinc-500">Feed mm/min</div>
+        <div className="text-3xl font-bold tabular-nums text-white">
+          {powerFeed}
+        </div>
+        <div className="mt-1 grid grid-cols-4 gap-1">
+          {[-100, -10, 10, 100].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() =>
+                onFeed(Math.min(10000, Math.max(10, powerFeed + d)))
+              }
+              className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
             >
               {d > 0 ? `+${d}` : d}
             </button>
           ))}
         </div>
       </div>
-      <div className="text-center">
-        <div className="text-[10px] uppercase tracking-widest text-zinc-300">
-          Laser / spindle override
-        </div>
-        <div className="text-3xl font-bold tabular-nums text-white">
-          {speed}%
-        </div>
-        <div className="mt-1 flex justify-center gap-2">
-          {[-10, -1, 1, 10].map((d) => (
-            <button
-              key={`s${d}`}
-              type="button"
-              onClick={() => onSpeed(Math.min(200, Math.max(10, speed + d)))}
-              className="min-w-10 rounded-sm border border-[#222] bg-[#2f2f2f] px-2 py-1 text-sm font-semibold text-white"
-            >
-              {d > 0 ? `+${d}` : d}
-            </button>
-          ))}
-        </div>
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          type="button"
+          onClick={() => onJog(-1)}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+        >
+          − Feed 5 mm
+        </button>
+        <button
+          type="button"
+          onClick={() => onJog(1)}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+        >
+          + Feed 5 mm
+        </button>
       </div>
     </div>
   );

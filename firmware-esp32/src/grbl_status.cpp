@@ -81,6 +81,13 @@ bool grbl_parse_status_line(const char *line_in, grbl_status_t *out) {
       out->feed = strtof(field + 2, nullptr);
     } else if (!strncmp(field, "Ov:", 3)) {
       parse_csv_ints(field + 3, &out->feed_ov, &out->rapid_ov, &out->speed_ov);
+    } else if (!strncmp(field, "A:", 2)) {
+      out->coolant_flood = false;
+      out->coolant_mist = false;
+      for (const char *q = field + 2; *q; q++) {
+        if (*q == 'F') out->coolant_flood = true;
+        if (*q == 'M') out->coolant_mist = true;
+      }
     } else if (!strncmp(field, "MPG:", 4)) {
       out->mpg_mode = (field[4] == '1');
     }

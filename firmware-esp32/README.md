@@ -39,6 +39,7 @@ Use `crowpanel-advance-7-v12` if your board is an older Advance revision (differ
 * **Plain ASCII UART ↔ grblHAL** on CrowPanel **UART1-OUT** (status, MPG claim, jog, hold, zero)
 * Offline demo jog/telemetry when no controller answers (status bar shows `Offline · demo`)
 * **G-code toolpath preview** — parses embedded `jobs/sample-badge.nc` (G0/G1/G2/G3, M3/M4/M5, S) into the MPG canvas
+* **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
 
 ### Wire to grblHAL (SKR / controller)
 
@@ -64,7 +65,6 @@ g++ -std=c++17 -I include -o /tmp/test_gcode_path \
 
 ## Next (not in this slice)
 
-* Live Override / Feed tabs (realtime override bytes)
 * Optional framed MPG transport (`FramedUart` / `Plugin_mpg_transport`)
 * Probe / program sender / SD or USB job load on device
 * Case / mounting for the 7″ panel + handwheel

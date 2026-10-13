@@ -8,7 +8,26 @@
 // Realtime / legacy bytes (grblHAL protocol.c)
 static const uint8_t kCmdStatus = '?';
 static const uint8_t kCmdFeedHold = '!';
+static const uint8_t kCmdJogCancel = 0x85;
 static const uint8_t kCmdMpgToggle = 0x8B;
+
+static const uint8_t kOvBytes[] = {
+    0x90,  // FEED_RESET
+    0x91,  // FEED_COARSE_PLUS
+    0x92,  // FEED_COARSE_MINUS
+    0x93,  // FEED_FINE_PLUS
+    0x94,  // FEED_FINE_MINUS
+    0x95,  // RAPID_RESET
+    0x96,  // RAPID_MEDIUM
+    0x97,  // RAPID_LOW
+    0x99,  // SPINDLE_RESET
+    0x9A,  // SPINDLE_COARSE_PLUS
+    0x9B,  // SPINDLE_COARSE_MINUS
+    0x9C,  // SPINDLE_FINE_PLUS
+    0x9D,  // SPINDLE_FINE_MINUS
+    0xA0,  // COOLANT_FLOOD
+    0xA1,  // COOLANT_MIST
+};
 
 static HardwareSerial GrblSerial(GRBL_UART_NUM);
 
@@ -129,6 +148,13 @@ void grbl_link_set_mpg(bool want_control) {
 }
 
 void grbl_link_feed_hold(void) { send_rt(kCmdFeedHold); }
+
+void grbl_link_jog_cancel(void) { send_rt(kCmdJogCancel); }
+
+void grbl_link_override(grbl_ov_t cmd) {
+  if ((unsigned)cmd >= sizeof(kOvBytes) / sizeof(kOvBytes[0])) return;
+  send_rt(kOvBytes[cmd]);
+}
 
 bool grbl_link_jog(int axis, float distance_mm, float feed_mm_min) {
   if (axis < 0 || axis >= GRBL_AXIS_CNT) return false;

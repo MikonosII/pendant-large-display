@@ -25,6 +25,8 @@ typedef struct {
   int feed_ov;
   int rapid_ov;
   int speed_ov;
+  bool coolant_flood;
+  bool coolant_mist;
   bool mpg_mode;
   bool use_wpos;
   bool online;

@@ -14,12 +14,25 @@ static lv_obj_t *scr;
 static lv_obj_t *header;
 static lv_obj_t *content;
 static lv_obj_t *mpg_panel;
+static lv_obj_t *ov_panel;
+static lv_obj_t *feed_panel;
 static lv_obj_t *other_panel;
 static lv_obj_t *status_bar;
 static lv_obj_t *mpg_btn;
 static lv_obj_t *state_lbl;
 static lv_obj_t *page_lbl;
 static lv_obj_t *job_lbl;
+
+static lv_obj_t *ov_feed_val;
+static lv_obj_t *ov_speed_val;
+static lv_obj_t *ov_rapid_val;
+static lv_obj_t *ov_flood_btn;
+static lv_obj_t *ov_mist_btn;
+static lv_obj_t *pf_feed_val;
+static lv_obj_t *pf_axis_btns[3];
+static bool coolant_flood = false;
+static bool coolant_mist = false;
+static float power_feed = 300.0f;  // POWER FEED jog rate mm/min
 
 static lv_obj_t *path_canvas;
 static lv_obj_t *head_dot;
@@ -180,14 +193,170 @@ static void refresh_mpg() {
   lv_obj_set_style_bg_color(mpg_btn, mpg_on ? lv_color_hex(0x059669) : lv_color_hex(0x2f2f2f), 0);
 }
 
+static int clamp_ov(int v, int lo, int hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+static void refresh_override_ui() {
+  char buf[16];
+  if (ov_feed_val) {
+    snprintf(buf, sizeof(buf), "%d%%", feed_ov);
+    lv_label_set_text(ov_feed_val, buf);
+  }
+  if (ov_speed_val) {
+    snprintf(buf, sizeof(buf), "%d%%", speed_ov);
+    lv_label_set_text(ov_speed_val, buf);
+  }
+  if (ov_rapid_val) {
+    snprintf(buf, sizeof(buf), "%d%%", rapid_ov);
+    lv_label_set_text(ov_rapid_val, buf);
+  }
+  if (ov_flood_btn) {
+    lv_obj_set_style_bg_color(ov_flood_btn,
+                              coolant_flood ? lv_color_hex(0x059669) : lv_color_hex(0x2f2f2f), 0);
+  }
+  if (ov_mist_btn) {
+    lv_obj_set_style_bg_color(ov_mist_btn,
+                              coolant_mist ? lv_color_hex(0x059669) : lv_color_hex(0x2f2f2f), 0);
+  }
+}
+
+static void refresh_power_feed_ui() {
+  char buf[24];
+  if (pf_feed_val) {
+    snprintf(buf, sizeof(buf), "%0.0f", power_feed);
+    lv_label_set_text(pf_feed_val, buf);
+  }
+  for (int i = 0; i < 3; i++) {
+    if (pf_axis_btns[i]) style_chrome_btn(pf_axis_btns[i], i == active_axis);
+  }
+}
+
+static void refresh_soft_labels() {
+  const char *a = "Back";
+  const char *b = "";
+  const char *c = "";
+  if (page_idx == 0) {
+    a = "Hold";
+    b = "- Jog";
+    c = "+ Jog";
+  } else if (page_idx == 1) {
+    a = "Back";
+    b = "F −10";
+    c = "F +10";
+  } else if (page_idx == 2) {
+    a = "Stop";
+    b = "− Feed";
+    c = "+ Feed";
+  } else {
+    a = "Back";
+    b = "";
+    c = "";
+  }
+  const char *labs[] = {a, b, c};
+  for (int i = 0; i < 3; i++) {
+    if (!soft_btns[i]) continue;
+    lv_obj_t *lbl = lv_obj_get_child(soft_btns[i], 0);
+    if (lbl) lv_label_set_text(lbl, labs[i]);
+    if (labs[i][0] == '\0') lv_obj_add_flag(soft_btns[i], LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(soft_btns[i], LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void apply_override(grbl_ov_t cmd) {
+  if (grbl_link_online()) {
+    grbl_link_override(cmd);
+    return;
+  }
+  // Offline demo: mirror typical grblHAL step sizes locally
+  switch (cmd) {
+    case GRBL_OV_FEED_RESET:
+      feed_ov = 100;
+      break;
+    case GRBL_OV_FEED_COARSE_PLUS:
+      feed_ov = clamp_ov(feed_ov + 10, 10, 200);
+      break;
+    case GRBL_OV_FEED_COARSE_MINUS:
+      feed_ov = clamp_ov(feed_ov - 10, 10, 200);
+      break;
+    case GRBL_OV_FEED_FINE_PLUS:
+      feed_ov = clamp_ov(feed_ov + 1, 10, 200);
+      break;
+    case GRBL_OV_FEED_FINE_MINUS:
+      feed_ov = clamp_ov(feed_ov - 1, 10, 200);
+      break;
+    case GRBL_OV_RAPID_RESET:
+      rapid_ov = 100;
+      break;
+    case GRBL_OV_RAPID_MEDIUM:
+      rapid_ov = 50;
+      break;
+    case GRBL_OV_RAPID_LOW:
+      rapid_ov = 25;
+      break;
+    case GRBL_OV_SPINDLE_RESET:
+      speed_ov = 100;
+      break;
+    case GRBL_OV_SPINDLE_COARSE_PLUS:
+      speed_ov = clamp_ov(speed_ov + 10, 10, 200);
+      break;
+    case GRBL_OV_SPINDLE_COARSE_MINUS:
+      speed_ov = clamp_ov(speed_ov - 10, 10, 200);
+      break;
+    case GRBL_OV_SPINDLE_FINE_PLUS:
+      speed_ov = clamp_ov(speed_ov + 1, 10, 200);
+      break;
+    case GRBL_OV_SPINDLE_FINE_MINUS:
+      speed_ov = clamp_ov(speed_ov - 1, 10, 200);
+      break;
+    case GRBL_OV_COOLANT_FLOOD:
+      coolant_flood = !coolant_flood;
+      break;
+    case GRBL_OV_COOLANT_MIST:
+      coolant_mist = !coolant_mist;
+      break;
+  }
+  refresh_override_ui();
+  refresh_telemetry();
+}
+
+static void on_ov_btn(lv_event_t *e) {
+  apply_override((grbl_ov_t)(intptr_t)lv_event_get_user_data(e));
+}
+
+static void on_pf_axis(lv_event_t *e) {
+  active_axis = (int)(intptr_t)lv_event_get_user_data(e);
+  refresh_power_feed_ui();
+  refresh_axes();
+}
+
+static void on_pf_feed_bump(lv_event_t *e) {
+  int d = (int)(intptr_t)lv_event_get_user_data(e);
+  power_feed += (float)d;
+  if (power_feed < 10) power_feed = 10;
+  if (power_feed > 10000) power_feed = 10000;
+  refresh_power_feed_ui();
+}
+
 static void show_page(int idx) {
   page_idx = idx;
   lv_label_set_text(page_lbl, k_pages[idx]);
+  lv_obj_add_flag(mpg_panel, LV_OBJ_FLAG_HIDDEN);
+  if (ov_panel) lv_obj_add_flag(ov_panel, LV_OBJ_FLAG_HIDDEN);
+  if (feed_panel) lv_obj_add_flag(feed_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
+
   if (idx == 0) {
     lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
+  } else if (idx == 1 && ov_panel) {
+    lv_obj_clear_flag(ov_panel, LV_OBJ_FLAG_HIDDEN);
+    refresh_override_ui();
+  } else if (idx == 2 && feed_panel) {
+    lv_obj_clear_flag(feed_panel, LV_OBJ_FLAG_HIDDEN);
+    refresh_power_feed_ui();
   } else {
-    lv_obj_add_flag(mpg_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
     if (idx == 3 && job_lbl) {
       char buf[96];
@@ -199,6 +368,7 @@ static void show_page(int idx) {
       if (job_lbl) lv_label_set_text(job_lbl, "");
     }
   }
+  refresh_soft_labels();
 }
 
 static void on_tab(lv_event_t *e) {
@@ -258,6 +428,14 @@ static void on_laser_bump(lv_event_t *e) {
   refresh_telemetry();
 }
 
+static void go_mpg_tab() {
+  show_page(0);
+  uint32_t n = lv_obj_get_child_cnt(header);
+  for (uint32_t i = 0; i < n; i++) {
+    style_chrome_btn(lv_obj_get_child(header, i), i == 0);
+  }
+}
+
 static void on_soft(lv_event_t *e) {
   int which = (int)(intptr_t)lv_event_get_user_data(e);
   if (page_idx == 0) {
@@ -272,12 +450,25 @@ static void on_soft(lv_event_t *e) {
       wpos[active_axis] += delta;
       refresh_axes();
     }
-  } else if (which == 0) {
-    show_page(0);
-    uint32_t n = lv_obj_get_child_cnt(header);
-    for (uint32_t i = 0; i < n; i++) {
-      style_chrome_btn(lv_obj_get_child(header, i), i == 0);
+  } else if (page_idx == 1) {
+    if (which == 0) go_mpg_tab();
+    else if (which == 1) apply_override(GRBL_OV_FEED_COARSE_MINUS);
+    else if (which == 2) apply_override(GRBL_OV_FEED_COARSE_PLUS);
+  } else if (page_idx == 2) {
+    if (which == 0) {
+      if (grbl_link_online()) grbl_link_jog_cancel();
+      else go_mpg_tab();
+      return;
     }
+    float delta = (which == 1) ? -5.0f : 5.0f;
+    if (grbl_link_online()) {
+      grbl_link_jog(active_axis, delta, power_feed);
+    } else {
+      wpos[active_axis] += delta;
+      refresh_axes();
+    }
+  } else if (which == 0) {
+    go_mpg_tab();
   }
 }
 
@@ -559,6 +750,165 @@ void ui_pendant_create() {
     lv_obj_add_event_cb(step_btns[i], on_step, LV_EVENT_CLICKED, (void *)(intptr_t)i);
   }
 
+  // ----- OVERRIDE panel -----
+  ov_panel = lv_obj_create(content);
+  lv_obj_set_size(ov_panel, UI_H_RES - 12, content_h - 8);
+  lv_obj_set_pos(ov_panel, 0, 0);
+  lv_obj_set_style_bg_opa(ov_panel, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(ov_panel, 0, 0);
+  lv_obj_set_style_pad_all(ov_panel, 4, 0);
+  lv_obj_clear_flag(ov_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(ov_panel, LV_OBJ_FLAG_HIDDEN);
+
+  auto make_ov_row = [&](lv_obj_t *parent, int y, const char *title, lv_obj_t **val_out,
+                         grbl_ov_t m10, grbl_ov_t m1, grbl_ov_t reset, grbl_ov_t p1,
+                         grbl_ov_t p10) {
+    lv_obj_t *cap = lv_label_create(parent);
+    lv_label_set_text(cap, title);
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(cap, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(cap, 4, y);
+
+    *val_out = lv_label_create(parent);
+    lv_obj_set_style_text_font(*val_out, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(*val_out, lv_color_hex(0xffffff), 0);
+    lv_obj_set_pos(*val_out, 4, y + 18);
+    lv_label_set_text(*val_out, "100%");
+
+    const char *labs[] = {"−10", "−1", "100", "+1", "+10"};
+    const grbl_ov_t cmds[] = {m10, m1, reset, p1, p10};
+    int bw = (UI_H_RES - 12 - 20) / 5;
+    for (int i = 0; i < 5; i++) {
+      lv_obj_t *b = lv_btn_create(parent);
+      lv_obj_set_size(b, bw - 2, 40);
+      lv_obj_set_pos(b, 4 + i * bw, y + 56);
+      style_chrome_btn(b, i == 2);
+      lv_obj_t *l = lv_label_create(b);
+      lv_label_set_text(l, labs[i]);
+      lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(b, on_ov_btn, LV_EVENT_CLICKED, (void *)(intptr_t)cmds[i]);
+    }
+  };
+
+  make_ov_row(ov_panel, 4, "FEED OVERRIDE", &ov_feed_val, GRBL_OV_FEED_COARSE_MINUS,
+              GRBL_OV_FEED_FINE_MINUS, GRBL_OV_FEED_RESET, GRBL_OV_FEED_FINE_PLUS,
+              GRBL_OV_FEED_COARSE_PLUS);
+  make_ov_row(ov_panel, 120, "LASER / SPINDLE", &ov_speed_val, GRBL_OV_SPINDLE_COARSE_MINUS,
+              GRBL_OV_SPINDLE_FINE_MINUS, GRBL_OV_SPINDLE_RESET, GRBL_OV_SPINDLE_FINE_PLUS,
+              GRBL_OV_SPINDLE_COARSE_PLUS);
+
+  {
+    lv_obj_t *cap = lv_label_create(ov_panel);
+    lv_label_set_text(cap, "RAPID");
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(cap, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(cap, 4, 236);
+    ov_rapid_val = lv_label_create(ov_panel);
+    lv_obj_set_style_text_font(ov_rapid_val, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(ov_rapid_val, lv_color_hex(0xffffff), 0);
+    lv_obj_set_pos(ov_rapid_val, 4, 254);
+    lv_label_set_text(ov_rapid_val, "100%");
+    const char *rlabs[] = {"25%", "50%", "100%"};
+    const grbl_ov_t rcmds[] = {GRBL_OV_RAPID_LOW, GRBL_OV_RAPID_MEDIUM, GRBL_OV_RAPID_RESET};
+    int bw = (UI_H_RES - 12 - 16) / 3;
+    for (int i = 0; i < 3; i++) {
+      lv_obj_t *b = lv_btn_create(ov_panel);
+      lv_obj_set_size(b, bw - 2, 40);
+      lv_obj_set_pos(b, 4 + i * bw, 290);
+      style_chrome_btn(b, i == 2);
+      lv_obj_t *l = lv_label_create(b);
+      lv_label_set_text(l, rlabs[i]);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(b, on_ov_btn, LV_EVENT_CLICKED, (void *)(intptr_t)rcmds[i]);
+    }
+    ov_flood_btn = lv_btn_create(ov_panel);
+    lv_obj_set_size(ov_flood_btn, bw - 2, 40);
+    lv_obj_set_pos(ov_flood_btn, 4, 340);
+    style_chrome_btn(ov_flood_btn, false);
+    lv_obj_t *fl = lv_label_create(ov_flood_btn);
+    lv_label_set_text(fl, "Flood");
+    lv_obj_center(fl);
+    lv_obj_add_event_cb(ov_flood_btn, on_ov_btn, LV_EVENT_CLICKED,
+                        (void *)(intptr_t)GRBL_OV_COOLANT_FLOOD);
+    ov_mist_btn = lv_btn_create(ov_panel);
+    lv_obj_set_size(ov_mist_btn, bw - 2, 40);
+    lv_obj_set_pos(ov_mist_btn, 4 + bw, 340);
+    style_chrome_btn(ov_mist_btn, false);
+    lv_obj_t *ml = lv_label_create(ov_mist_btn);
+    lv_label_set_text(ml, "Mist");
+    lv_obj_center(ml);
+    lv_obj_add_event_cb(ov_mist_btn, on_ov_btn, LV_EVENT_CLICKED,
+                        (void *)(intptr_t)GRBL_OV_COOLANT_MIST);
+  }
+
+  // ----- POWER FEED panel -----
+  feed_panel = lv_obj_create(content);
+  lv_obj_set_size(feed_panel, UI_H_RES - 12, content_h - 8);
+  lv_obj_set_pos(feed_panel, 0, 0);
+  lv_obj_set_style_bg_opa(feed_panel, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(feed_panel, 0, 0);
+  lv_obj_set_style_pad_all(feed_panel, 4, 0);
+  lv_obj_clear_flag(feed_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(feed_panel, LV_OBJ_FLAG_HIDDEN);
+
+  {
+    lv_obj_t *cap = lv_label_create(feed_panel);
+    lv_label_set_text(cap, "POWER FEED");
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(cap, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(cap, 4, 8);
+
+    lv_obj_t *axis_cap = lv_label_create(feed_panel);
+    lv_label_set_text(axis_cap, "AXIS");
+    lv_obj_set_style_text_font(axis_cap, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(axis_cap, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(axis_cap, 4, 40);
+    int abw = (UI_H_RES - 12 - 16) / 3;
+    for (int i = 0; i < 3; i++) {
+      pf_axis_btns[i] = lv_btn_create(feed_panel);
+      lv_obj_set_size(pf_axis_btns[i], abw - 2, 56);
+      lv_obj_set_pos(pf_axis_btns[i], 4 + i * abw, 60);
+      style_chrome_btn(pf_axis_btns[i], i == active_axis);
+      lv_obj_t *l = lv_label_create(pf_axis_btns[i]);
+      lv_label_set_text(l, k_axis[i]);
+      lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(pf_axis_btns[i], on_pf_axis, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    }
+
+    lv_obj_t *fc = lv_label_create(feed_panel);
+    lv_label_set_text(fc, "FEED mm/min");
+    lv_obj_set_style_text_font(fc, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(fc, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(fc, 4, 140);
+    pf_feed_val = lv_label_create(feed_panel);
+    lv_obj_set_style_text_font(pf_feed_val, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(pf_feed_val, lv_color_hex(0xffffff), 0);
+    lv_obj_set_pos(pf_feed_val, 4, 160);
+    lv_label_set_text(pf_feed_val, "300");
+
+    const int bumps[] = {-100, -10, 10, 100};
+    const char *blabs[] = {"−100", "−10", "+10", "+100"};
+    int bbw = (UI_H_RES - 12 - 20) / 4;
+    for (int i = 0; i < 4; i++) {
+      lv_obj_t *b = lv_btn_create(feed_panel);
+      lv_obj_set_size(b, bbw - 2, 44);
+      lv_obj_set_pos(b, 4 + i * bbw, 210);
+      style_chrome_btn(b, false);
+      lv_obj_t *l = lv_label_create(b);
+      lv_label_set_text(l, blabs[i]);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(b, on_pf_feed_bump, LV_EVENT_CLICKED, (void *)(intptr_t)bumps[i]);
+    }
+
+    lv_obj_t *hint = lv_label_create(feed_panel);
+    lv_label_set_text(hint, "Soft −/+ Feed jogs 5 mm at this rate.\nStop cancels an active jog.");
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(hint, 4, 280);
+  }
+
   other_panel = lv_obj_create(content);
   lv_obj_set_size(other_panel, UI_H_RES - 12, content_h - 8);
   lv_obj_set_pos(other_panel, 0, 0);
@@ -649,6 +999,8 @@ void ui_pendant_tick() {
   feed_ov = st.feed_ov;
   rapid_ov = st.rapid_ov;
   speed_ov = st.speed_ov;
+  coolant_flood = st.coolant_flood;
+  coolant_mist = st.coolant_mist;
 
   if (mpg_on != st.mpg_mode) {
     mpg_on = st.mpg_mode;
@@ -661,4 +1013,6 @@ void ui_pendant_tick() {
 
   refresh_axes();
   refresh_telemetry();
+  if (page_idx == 1) refresh_override_ui();
+  if (page_idx == 2) refresh_power_feed_ui();
 }
