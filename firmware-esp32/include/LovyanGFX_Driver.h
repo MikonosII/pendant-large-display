@@ -7,8 +7,25 @@
 #include <lgfx/v1/touch/Touch_GT911.hpp>
 #include "pins_config.h"
 
-// Elecrow CrowPanel Advance 7" (GW1076-i2 IPS + GT911)
-// Pin map / timing aligned with Elecrow V1.3 examples and FluidTouch Advance.
+// CrowPanel Advance RGB + GT911.
+//
+//   PANEL_ST7262  — Advance 5″ (default)  Elecrow ST7262 timing
+//   PANEL_GW1076  — Advance 7″            GW1076-i2 IPS timing
+//
+// Pin map is shared across Advance 4.3 / 5 / 7; only RGB timing differs.
+
+#ifndef PANEL_ST7262
+#define PANEL_ST7262 0
+#endif
+#ifndef PANEL_GW1076
+#define PANEL_GW1076 0
+#endif
+
+#if !PANEL_ST7262 && !PANEL_GW1076
+#undef PANEL_ST7262
+#define PANEL_ST7262 1
+#endif
+
 class LGFX : public lgfx::LGFX_Device {
  public:
   lgfx::Bus_RGB _bus_instance;
@@ -57,14 +74,21 @@ class LGFX : public lgfx::LGFX_Device {
       cfg.pin_vsync = GPIO_NUM_41;
       cfg.pin_hsync = GPIO_NUM_40;
       cfg.pin_pclk = GPIO_NUM_39;
-      cfg.freq_write = 18000000;
 
-      // Advance IPS timing (differs from Basic TN)
+#if PANEL_GW1076
+      // CrowPanel Advance 7″ GW1076-i2 (Elecrow V1.3 / FluidTouch Advance)
+      cfg.freq_write = 18000000;
       cfg.hsync_polarity = 1;
+      cfg.vsync_polarity = 1;
+#else
+      // CrowPanel Advance 5″ ST7262 (Elecrow lesson-03 BigInch_LVGL)
+      cfg.freq_write = 21000000;
+      cfg.hsync_polarity = 0;
+      cfg.vsync_polarity = 0;
+#endif
       cfg.hsync_front_porch = 8;
       cfg.hsync_pulse_width = 4;
       cfg.hsync_back_porch = 8;
-      cfg.vsync_polarity = 1;
       cfg.vsync_front_porch = 8;
       cfg.vsync_pulse_width = 4;
       cfg.vsync_back_porch = 8;

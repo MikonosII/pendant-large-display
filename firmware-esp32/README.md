@@ -1,28 +1,33 @@
-# SmartPendant Large — CrowPanel Advance 7″ firmware
+# SmartPendant Large — CrowPanel Advance firmware
 
-ESP32-S3 port of the SmartPendant large-screen fork for the **Elecrow CrowPanel Advance 7.0″ HMI**.
+ESP32-S3 port of the SmartPendant large-screen fork for **Elecrow CrowPanel Advance** HMIs.
 
-| Item | Value |
-|------|--------|
-| Board | CrowPanel Advance 7″ |
-| MCU | ESP32-S3-WROOM-1-N16R8 |
-| Display IC | **GW1076-i2** (IPS RGB 800×480) |
-| Touch | GT911 @ I2C `0x5D` |
-| Backlight MCU | STC8H1K28 @ I2C `0x30` |
-| UI orientation | **Portrait 480×800** (`PORTRAIT_MODE=1`) |
+| Item | Default (5″) | Alternate (7″) |
+|------|--------------|----------------|
+| Board | CrowPanel Advance **5.0″** | CrowPanel Advance **7.0″** |
+| Driver IC | **ST7262** | **GW1076-i2** |
+| MCU | ESP32-S3-WROOM-1-N16R8 | same |
+| Native panel | IPS RGB 800×480 | same |
+| UI orientation | **Portrait 480×800** (`PORTRAIT_MODE=1`) | same |
+| Touch | GT911 @ I2C `0x5D` | same |
+| Backlight MCU | STC8H1K28 @ I2C `0x30` | same |
+| PlatformIO env | `crowpanel-advance-5` | `crowpanel-advance-7-v13` |
 
-This is a different chip stack than the original STM32F411 + ILI9488 SmartPendant. The STM32 tree at the repo root remains as the upstream-layout reference; **this folder is what you flash to the CrowPanel**.
+RGB **pin map is shared** across Advance sizes; only LovyanGFX timing differs (`PANEL_ST7262` vs `PANEL_GW1076`). The STM32 tree at the repo root remains as the upstream-layout reference; **this folder is what you flash**.
 
 ## Build & flash
 
 ```bash
 cd firmware-esp32
-pio run -e crowpanel-advance-7-v13
+# 5″ ST7262 (default)
+pio run -e crowpanel-advance-5
+pio run -e crowpanel-advance-5 -t upload
+# 7″ GW1076-i2 (large-screen alternate — keep using if that is your panel)
 pio run -e crowpanel-advance-7-v13 -t upload
 pio device monitor -b 115200
 ```
 
-Use `crowpanel-advance-7-v12` if your board is an older Advance revision (different backlight command range).
+Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (different backlight command range).
 
 ### Requirements
 
@@ -32,7 +37,7 @@ Use `crowpanel-advance-7-v12` if your board is an older Advance revision (differ
 
 ## What works in this slice
 
-* GW1076 RGB panel bring-up via LovyanGFX (Advance pin map / timing)
+* RGB panel bring-up via LovyanGFX (Advance pin map; ST7262 or GW1076 timing)
 * GT911 capacitive touch
 * STC8H1K28 backlight on
 * SmartPendant-style chrome: header tabs, DRO, step sizes, MPG toggle, soft buttons
@@ -90,7 +95,7 @@ Stock pendant uses a **100 PPR** quadrature wheel on a timer channel. CrowPanel 
 2. Build with `-DI2C_MPG_ENABLE=1` (optional `-DI2C_MPG_ADDR=0x20`).
 3. Bit map: **P0/P1** = wheel A/B, **P2–P4** = axis X/Y/Z, **P5** = step-size cycle (active-low).
 
-With MPG on, each detent jogs the active axis by the selected step size. The layout lab exposes **◀ Wheel / Wheel ▶** as a stand-in.
+With MPG on, each detent jogs the active axis by the selected step size. Soft −/+ Jog is the lab stand-in.
 
 ### SD / LittleFS jobs
 
@@ -101,9 +106,9 @@ With MPG on, each detent jogs the active axis by the selected step size. The lay
 ## Next (not in this slice)
 
 * Program sender (stream NC to grblHAL from the pendant)
-* Case / mounting for the 7″ panel + handwheel
+* Case / mounting for the panel + handwheel
 * Hardware smoke on CrowPanel + controller
 
 ## Layout lab
 
-Desktop preview of the same 480×800 chrome lives in `../simulator` — useful while iterating UI without flashing.
+Desktop preview of the same 480×800 chrome lives in `../simulator` — useful while iterating UI without flashing. Pick **5″ Advance** or **7″ Advance** in the profile list (identical logical size; different glass).

@@ -27,9 +27,9 @@ export function LayoutLab() {
             Large Screen Lab
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
-            Preview the 7″ MPG dashboard: parsed NC toolpath with live laser
-            cursor, WPos/MPos, feed, and laser S. Jog moves the head on the
-            path. Stock 3.5″ stays DRO-only.
+            Preview the CrowPanel Advance MPG dashboard (5″ default, 7″
+            kept as a large-screen option): toolpath, DRO, overrides, probe,
+            and job load. Stock 3.5″ stays DRO-only.
           </p>
         </div>
 
@@ -96,7 +96,14 @@ export function LayoutLab() {
             Compare stock
           </Button>
           <Button size="sm" onClick={() => setProfileId(2)}>
-            Use 7″ portrait
+            Use 5″ Advance
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setProfileId(3)}
+          >
+            Use 7″ Advance
           </Button>
         </div>
       </aside>

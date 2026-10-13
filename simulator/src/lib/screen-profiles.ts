@@ -1,6 +1,6 @@
-/** Mirrors Application/ScreenConfig.h */
+/** Mirrors Application/ScreenConfig.h + CrowPanel Advance targets */
 
-export type ProfileId = 0 | 1 | 2;
+export type ProfileId = 0 | 1 | 2 | 3;
 
 export type ScreenProfile = {
   id: ProfileId;
@@ -47,9 +47,9 @@ export const PROFILES: ScreenProfile[] = [
   },
   {
     id: 2,
-    name: '7.0" portrait (480×800)',
-    shortName: "7.0″",
-    diagonalIn: 7.0,
+    name: '5.0" Advance ST7262 (480×800)',
+    shortName: "5.0″",
+    diagonalIn: 5.0,
     logicalW: 480,
     logicalH: 800,
     headerH: 56,
@@ -57,7 +57,21 @@ export const PROFILES: ScreenProfile[] = [
     softBtnH: 48,
     cmakeValue: "2",
     hardwareNote:
-      "Default in this fork. 7″ 800×480 panel rotated to portrait 480×800 — matching controller required (not stock ILI9488).",
+      "Default target: CrowPanel Advance 5″ IPS (ST7262) 800×480 → portrait UI 480×800. Fits tighter machine enclosures than the 7″.",
+  },
+  {
+    id: 3,
+    name: '7.0" Advance GW1076 (480×800)',
+    shortName: "7.0″",
+    diagonalIn: 7.0,
+    logicalW: 480,
+    logicalH: 800,
+    headerH: 56,
+    tabsH: 48,
+    softBtnH: 48,
+    cmakeValue: "3",
+    hardwareNote:
+      "Same 480×800 chrome as 5″ — CrowPanel Advance 7″ (GW1076-i2). Kept in this fork for larger HMIs.",
   },
 ];
 

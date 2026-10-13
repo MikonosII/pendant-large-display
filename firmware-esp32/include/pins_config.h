@@ -1,6 +1,7 @@
 #pragma once
 
-// CrowPanel Advance 7" — native RGB panel size (GW1076-i2)
+// CrowPanel Advance 5″ (ST7262) and 7″ (GW1076-i2) share native 800×480 RGB.
+// Select panel timing via PANEL_ST7262 / PANEL_GW1076 in platformio.ini.
 #define LCD_H_RES 800
 #define LCD_V_RES 480
 

@@ -1,4 +1,5 @@
-// SmartPendant Large — CrowPanel Advance 7" (GW1076-i2) bring-up
+// SmartPendant Large — CrowPanel Advance bring-up
+// Default: 5″ ST7262; alternate: 7″ GW1076-i2 (PANEL_GW1076).
 // Portrait 480×800 UI over native 800×480 RGB panel + GT911 touch.
 
 #include <Arduino.h>
@@ -71,7 +72,11 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println();
+#if PANEL_GW1076
   Serial.println("SmartPendant Large — CrowPanel Advance 7\" (GW1076-i2)");
+#else
+  Serial.println("SmartPendant Large — CrowPanel Advance 5\" (ST7262)");
+#endif
   Serial.printf("Build %s  portrait=%d\n", VERSION, PORTRAIT_MODE);
 
   wake_touch_mcu();

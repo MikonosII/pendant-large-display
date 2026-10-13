@@ -177,20 +177,6 @@ export function PendantScreen({ profile }: Props) {
                 window.setTimeout(() => setStartFlash(false), 800);
               }}
               startFlash={startFlash}
-              onHandwheel={(dir) => {
-                if (!mpgOn) return;
-                setAxes((prev) =>
-                  prev.map((a, i) =>
-                    i === activeAxis
-                      ? {
-                          ...a,
-                          wpos:
-                            Math.round((a.wpos + dir * step) * 1000) / 1000,
-                        }
-                      : a
-                  )
-                );
-              }}
             />
           )}
           {page === "OVERRIDE" && (
@@ -579,7 +565,6 @@ function MpgView({
   onLaser,
   onStart,
   startFlash,
-  onHandwheel,
 }: {
   axes: Axis[];
   activeAxis: number;
@@ -599,7 +584,6 @@ function MpgView({
   onLaser: (d: number) => void;
   onStart: () => void;
   startFlash: boolean;
-  onHandwheel: (dir: 1 | -1) => void;
 }) {
   const steps = [0.01, 0.1, 1, 10];
   const laserOn = laserCmd > 0;
@@ -729,26 +713,6 @@ function MpgView({
       >
         START
       </button>
-
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onHandwheel(-1)}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
-        >
-          ◀ Wheel
-        </button>
-        <div className="px-1 text-center text-[8px] uppercase tracking-wider text-zinc-500">
-          MPG
-        </div>
-        <button
-          type="button"
-          onClick={() => onHandwheel(1)}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
-        >
-          Wheel ▶
-        </button>
-      </div>
     </div>
   );
 }
@@ -1262,7 +1226,7 @@ function SettingsView({
         <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
           GPIO A/B default −1 (TF card claims IO4–6). Prefer PCF8574 on
           SDA15/SCL16 (`I2C_MPG_ENABLE=1`, addr 0x20): P0/P1 wheel, P2–P4
-          axis, P5 step cycle. Lab uses ◀ Wheel / Wheel ▶ on MPG.
+          axis, P5 step cycle. Soft −/+ Jog stands in for detents in the lab.
         </p>
       </div>
       <div>
