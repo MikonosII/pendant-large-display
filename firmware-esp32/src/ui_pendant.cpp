@@ -330,6 +330,21 @@ static void on_start(lv_event_t *e) {
   }
 }
 
+static void refresh_laser_enable_ui() {
+  if (!laser_test_btn) return;
+  if (laser_k_on) {
+    lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0xea580c), 0);
+    lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0xfbbf24), 0);
+    lv_obj_set_style_border_width(laser_test_btn, 2, 0);
+    if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER ON");
+  } else {
+    lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0x7c2d12), 0);
+    lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0x9a3412), 0);
+    lv_obj_set_style_border_width(laser_test_btn, 1, 0);
+    if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER TEST");
+  }
+}
+
 static void on_laser_test(lv_event_t *e) {
   (void)e;
   if (grbl_link_online()) {
@@ -337,36 +352,28 @@ static void on_laser_test(lv_event_t *e) {
       lv_label_set_text(state_lbl, "Laser enable blocked (Idle+MPG?)");
       return;
     }
-    // Visual "armed" cue on the CMD% cell (PWM may still be 0)
-    laser_s_cmd = 1.0f;
-    laser_s_act = 1.0f;
-    refresh_telemetry();
     char buf[48];
     snprintf(buf, sizeof(buf), "Laser K+ ON  ·  M64P%d", (int)LASER_ENABLE_DOUT);
     lv_label_set_text(state_lbl, buf);
   } else {
-    laser_s_cmd = 1.0f;
-    laser_s_act = 1.0f;
-    refresh_telemetry();
     lv_label_set_text(state_lbl, "Laser K+ ON  ·  demo");
   }
+  laser_k_on = true;
+  refresh_laser_enable_ui();
 }
 
 static void on_laser_off(lv_event_t *e) {
   (void)e;
   if (grbl_link_online()) {
     grbl_link_laser_off();
-  }
-  laser_s_cmd = 0;
-  laser_s_act = 0;
-  refresh_telemetry();
-  if (grbl_link_online()) {
     char buf[48];
     snprintf(buf, sizeof(buf), "Laser K+ OFF  ·  M65P%d", (int)LASER_ENABLE_DOUT);
     lv_label_set_text(state_lbl, buf);
   } else {
     lv_label_set_text(state_lbl, "Laser K+ OFF  ·  demo");
   }
+  laser_k_on = false;
+  refresh_laser_enable_ui();
 }
 
 static void refresh_soft_labels() {
@@ -1034,19 +1041,16 @@ void ui_pendant_create() {
   // Laser enable (M64 → PSU K+ to GND) / inhibit (M65 + M5)
   const int laser_y = step_y + 48 + 52;
   const int laser_bw = (UI_H_RES - 12 - 6) / 2;
-  lv_obj_t *laser_test_btn = lv_btn_create(mpg_panel);
+  laser_test_btn = lv_btn_create(mpg_panel);
   lv_obj_set_size(laser_test_btn, laser_bw, 44);
   lv_obj_set_pos(laser_test_btn, 0, laser_y);
   lv_obj_set_style_radius(laser_test_btn, 2, 0);
-  lv_obj_set_style_border_width(laser_test_btn, 1, 0);
-  lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0x9a3412), 0);
-  lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0xc2410c), 0);
   lv_obj_set_style_text_color(laser_test_btn, lv_color_hex(0xffffff), 0);
-  lv_obj_t *lt_lbl = lv_label_create(laser_test_btn);
-  lv_label_set_text(lt_lbl, "LASER TEST");
-  lv_obj_set_style_text_font(lt_lbl, &lv_font_montserrat_14, 0);
-  lv_obj_center(lt_lbl);
+  laser_test_lbl = lv_label_create(laser_test_btn);
+  lv_obj_set_style_text_font(laser_test_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_center(laser_test_lbl);
   lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
+  refresh_laser_enable_ui();
 
   lv_obj_t *laser_off_btn = lv_btn_create(mpg_panel);
   lv_obj_set_size(laser_off_btn, laser_bw, 44);

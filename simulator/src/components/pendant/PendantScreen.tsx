@@ -569,6 +569,7 @@ function MpgView({
   onLaser,
   onStart,
   startFlash,
+  laserKOn,
   onLaserTest,
   onLaserOff,
 }: {
@@ -590,6 +591,7 @@ function MpgView({
   onLaser: (d: number) => void;
   onStart: () => void;
   startFlash: boolean;
+  laserKOn: boolean;
   onLaserTest: () => void;
   onLaserOff: () => void;
 }) {
@@ -726,9 +728,14 @@ function MpgView({
         <button
           type="button"
           onClick={onLaserTest}
-          className="rounded-sm border border-orange-900 bg-orange-700 py-2.5 text-[11px] font-bold tracking-wide text-white"
+          className={cn(
+            "rounded-sm border py-2.5 text-[11px] font-bold tracking-wide text-white transition-colors",
+            laserKOn
+              ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
+              : "border-orange-950 bg-orange-950/80"
+          )}
         >
-          LASER TEST
+          {laserKOn ? "LASER ON" : "LASER TEST"}
         </button>
         <button
           type="button"
