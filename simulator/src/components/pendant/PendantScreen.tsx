@@ -569,7 +569,7 @@ function MachineMap({
   const hy = Math.min(bedY, Math.max(0, y));
 
   return (
-    <div className="relative h-[210px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
+    <div className="relative h-full min-h-[160px] overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
       <div className="absolute left-1.5 top-1 z-10 text-[10px] text-zinc-400">
         WPos map · {bedX}×{bedY} mm
       </div>
@@ -795,20 +795,27 @@ function MpgView({
   return (
     <div className="flex h-full flex-col gap-1">
       {roomy && (
-        <MachineMap
-          x={axes[0].wpos}
-          y={axes[1].wpos}
-          laserOn={laserOn}
-        />
+        <div className="min-h-0 flex-1">
+          <MachineMap
+            x={axes[0].wpos}
+            y={axes[1].wpos}
+            laserOn={laserOn}
+          />
+        </div>
       )}
 
       {roomy && (
-        <div className="px-1 text-[9px] uppercase tracking-wider text-zinc-400">
+        <div className="shrink-0 px-1 text-[9px] uppercase tracking-wider text-zinc-400">
           WPos / MPos
         </div>
       )}
 
-      <div className={cn(roomy ? "grid grid-cols-3 gap-1" : "flex flex-col gap-1")}>
+      <div
+        className={cn(
+          "shrink-0",
+          roomy ? "grid grid-cols-3 gap-1" : "flex flex-col gap-1"
+        )}
+      >
         {axes.map((axis, i) => (
           <button
             key={axis.name}
@@ -862,7 +869,7 @@ function MpgView({
       </div>
 
       {roomy && (
-        <div className="grid grid-cols-[1fr_2fr_1fr] gap-1">
+        <div className="grid shrink-0 grid-cols-[1fr_2fr_1fr] gap-1">
           <TeleCell title="FEED mm/min" value={feedRate.toFixed(0)} />
           <LaserPair
             cmd={Math.min(100, Math.max(0, Math.round((laserCmd / 1000) * 100)))}
@@ -877,20 +884,21 @@ function MpgView({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={onLaserTest}
-        className={cn(
-          "mt-0.5 w-full rounded-sm border py-3.5 text-sm font-bold tracking-wide text-white transition-colors",
-          laserKOn
-            ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
-            : "border-orange-950 bg-orange-950/80"
-        )}
-      >
-        {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
-      </button>
+      {/* One bottom stack — laser + macros + steps stay flush (no mt-auto gap) */}
+      <div className="mt-auto shrink-0 space-y-1">
+        <button
+          type="button"
+          onClick={onLaserTest}
+          className={cn(
+            "w-full rounded-sm border py-3.5 text-sm font-bold tracking-wide text-white transition-colors",
+            laserKOn
+              ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
+              : "border-orange-950 bg-orange-950/80"
+          )}
+        >
+          {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
+        </button>
 
-      <div className="mt-auto space-y-1">
         <div className="grid grid-cols-4 gap-1.5">
           {macros.map((m, idx) => {
             const teaching = teachSlot === idx;
