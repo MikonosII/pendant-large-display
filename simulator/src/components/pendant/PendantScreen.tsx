@@ -44,6 +44,7 @@ export function PendantScreen({ profile, scale }: Props) {
   const [powerFeed, setPowerFeed] = useState(300);
   const [job, setJob] = useState(INITIAL_JOB);
   const [startFlash, setStartFlash] = useState(false);
+  const [framedTransport, setFramedTransport] = useState(false);
 
   const bumpOv = (
     kind: "feed" | "speed" | "rapid",
@@ -214,10 +215,17 @@ export function PendantScreen({ profile, scale }: Props) {
               onReloadSample={() => setJob(INITIAL_JOB)}
             />
           )}
+          {page === "SETTINGS" && (
+            <SettingsView
+              framed={framedTransport}
+              onToggleFramed={() => setFramedTransport((v) => !v)}
+            />
+          )}
           {page !== "MPG" &&
             page !== "OVERRIDE" &&
             page !== "POWER FEED" &&
-            page !== "GCODE" && (
+            page !== "GCODE" &&
+            page !== "SETTINGS" && (
               <PlaceholderView title={page} profile={profile} />
             )}
         </div>
@@ -939,6 +947,40 @@ function GcodeView({
         Preview parses G0/G1/G2/G3 with M3/M4/M5 and modal S. Cut moves (amber)
         vs rapids (dashed) update the MPG job canvas.
       </p>
+    </div>
+  );
+}
+
+function SettingsView({
+  framed,
+  onToggleFramed,
+}: {
+  framed: boolean;
+  onToggleFramed: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col gap-3 px-2 py-3 text-zinc-200">
+      <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+        Settings
+      </div>
+      <div>
+        <div className="text-[9px] uppercase text-zinc-500">UART transport</div>
+        <button
+          type="button"
+          onClick={onToggleFramed}
+          className={cn(
+            "mt-1 w-full rounded-sm border border-[#222] py-3 text-sm font-bold text-white",
+            framed ? "bg-[#3d5a80]" : "bg-[#2f2f2f]"
+          )}
+        >
+          {framed ? "Framed" : "Plain"}
+        </button>
+        <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">
+          Plain matches stock grblHAL ASCII. Framed is Plugin_mpg_transport
+          (SOF/CRC/ACK) — both ends must match. Lab toggle is visual only;
+          firmware switches the real UART path.
+        </p>
+      </div>
     </div>
   );
 }

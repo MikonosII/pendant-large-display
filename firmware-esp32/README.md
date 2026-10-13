@@ -54,7 +54,8 @@ LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its o
 | 3.3 V logic only | — |
 
 * Baud **115200** 8N1 (same as stock SmartPendant default)
-* Protocol: plain Grbl status (`?` / `<Idle\|WPos:…\|FS:…>`) + realtime `0x8B` MPG toggle — **not** the optional framed `Plugin_mpg_transport` yet
+* Protocol: plain Grbl status by default (`?` / `<Idle\|WPos:…\|FS:…>`) + realtime `0x8B` MPG toggle
+* Optional **framed** transport (`Plugin_mpg_transport`): toggle in **SETTINGS → UART TRANSPORT**, or build with `-DGRBL_TRANSPORT_FRAMED=1`. Both ends must match.
 * Put the S0/S1 function switches in a mode that leaves UART1 free (not mic/I2S on IO19/IO20)
 
 Host parser smoke tests (no board needed):
@@ -64,11 +65,12 @@ g++ -std=c++17 -I include -o /tmp/test_grbl_status \
   test/test_grbl_status.cpp src/grbl_status.cpp && /tmp/test_grbl_status
 g++ -std=c++17 -I include -o /tmp/test_gcode_path \
   test/test_gcode_path.cpp src/gcode_path.cpp && /tmp/test_gcode_path
+g++ -std=c++17 -I include -o /tmp/test_mpg_framed \
+  test/test_mpg_framed.cpp src/mpg_framed.cpp && /tmp/test_mpg_framed
 ```
 
 ## Next (not in this slice)
 
-* Optional framed MPG transport (`FramedUart` / `Plugin_mpg_transport`)
 * Probe / program sender / SD or USB job load on device
 * Case / mounting for the 7″ panel + handwheel
 

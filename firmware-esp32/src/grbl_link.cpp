@@ -1,5 +1,6 @@
 #include "grbl_link.h"
 #include "pins_config.h"
+#include "mpg_framed.h"
 
 #include <Arduino.h>
 #include <stdio.h>
@@ -11,23 +12,11 @@ static const uint8_t kCmdFeedHold = '!';
 static const uint8_t kCmdCycleStart = '~';
 static const uint8_t kCmdJogCancel = 0x85;
 static const uint8_t kCmdMpgToggle = 0x8B;
+static const uint8_t kResyncMarker = 0x18;
 
 static const uint8_t kOvBytes[] = {
-    0x90,  // FEED_RESET
-    0x91,  // FEED_COARSE_PLUS
-    0x92,  // FEED_COARSE_MINUS
-    0x93,  // FEED_FINE_PLUS
-    0x94,  // FEED_FINE_MINUS
-    0x95,  // RAPID_RESET
-    0x96,  // RAPID_MEDIUM
-    0x97,  // RAPID_LOW
-    0x99,  // SPINDLE_RESET
-    0x9A,  // SPINDLE_COARSE_PLUS
-    0x9B,  // SPINDLE_COARSE_MINUS
-    0x9C,  // SPINDLE_FINE_PLUS
-    0x9D,  // SPINDLE_FINE_MINUS
-    0xA0,  // COOLANT_FLOOD
-    0xA1,  // COOLANT_MIST
+    0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x99,
+    0x9A, 0x9B, 0x9C, 0x9D, 0xA0, 0xA1,
 };
 
 static HardwareSerial GrblSerial(GRBL_UART_NUM);
@@ -40,14 +29,32 @@ static uint32_t last_status_tx_ms = 0;
 static uint32_t last_mpg_tx_ms = 0;
 static bool want_mpg = true;
 static bool ever_seen = false;
+static bool use_framed = false;
+static mpg_framed_t *framed = nullptr;
 
-static void send_rt(uint8_t b) { GrblSerial.write(b); }
+// --- framed HW glue ---
+static bool hw_read(void *ctx, uint8_t *byte) {
+  (void)ctx;
+  if (GrblSerial.available() <= 0) return false;
+  int c = GrblSerial.read();
+  if (c < 0) return false;
+  *byte = (uint8_t)c;
+  return true;
+}
 
-static void send_line(const char *s) {
-  GrblSerial.print(s);
-  if (s[0] && s[strlen(s) - 1] != '\r') {
-    GrblSerial.write('\r');
-  }
+static bool hw_write(void *ctx, const uint8_t *data, uint32_t len) {
+  (void)ctx;
+  return GrblSerial.write(data, len) == len;
+}
+
+static bool hw_tx_idle(void *ctx) {
+  (void)ctx;
+  return true;  // HardwareSerial buffers; treat as always ready
+}
+
+static uint32_t hw_now(void *ctx) {
+  (void)ctx;
+  return millis();
 }
 
 static void status_reset_defaults() {
@@ -78,23 +85,94 @@ static void handle_line(char *line) {
   }
 }
 
+static void feed_byte(uint8_t c) {
+  if (c == kResyncMarker) {
+    rx_len = 0;  // drop partial line after framed gap
+    return;
+  }
+  if (c == '\n' || c == '\r') {
+    if (rx_len > 0) {
+      rx_line[rx_len] = '\0';
+      handle_line(rx_line);
+      rx_len = 0;
+    }
+    return;
+  }
+  if (rx_len + 1 < sizeof(rx_line)) {
+    rx_line[rx_len++] = (char)c;
+  } else {
+    rx_len = 0;
+  }
+}
+
 static void drain_rx() {
+  if (use_framed && framed) {
+    mpg_framed_service(framed);
+    uint8_t b;
+    while (mpg_framed_read(framed, &b)) feed_byte(b);
+    return;
+  }
   while (GrblSerial.available() > 0) {
     int c = GrblSerial.read();
     if (c < 0) break;
-    if (c == '\n' || c == '\r') {
-      if (rx_len > 0) {
-        rx_line[rx_len] = '\0';
-        handle_line(rx_line);
-        rx_len = 0;
+    feed_byte((uint8_t)c);
+  }
+}
+
+static void send_rt(uint8_t b) {
+  if (use_framed && framed) {
+    // Retry a few times if Rlt channel is busy
+    for (int i = 0; i < 8; i++) {
+      if (mpg_framed_write(framed, &b, 1)) return;
+      mpg_framed_service(framed);
+      delay(1);
+    }
+    Serial.println("[grbl] framed RT write busy");
+    return;
+  }
+  GrblSerial.write(b);
+}
+
+static void send_line(const char *s) {
+  char buf[96];
+  size_t n = strlen(s);
+  if (n + 2 > sizeof(buf)) return;
+  memcpy(buf, s, n);
+  if (n == 0 || buf[n - 1] != '\r') buf[n++] = '\r';
+  buf[n] = '\0';
+
+  if (use_framed && framed) {
+    for (int i = 0; i < 16; i++) {
+      if (mpg_framed_write(framed, (const uint8_t *)buf, (uint32_t)n)) return;
+      mpg_framed_service(framed);
+      delay(2);
+    }
+    Serial.println("[grbl] framed Dat write busy");
+    return;
+  }
+  GrblSerial.write((const uint8_t *)buf, n);
+}
+
+static void ensure_framed(bool enable) {
+  if (enable == use_framed && (!enable || framed)) return;
+  use_framed = enable;
+  rx_len = 0;
+  if (enable) {
+    if (!framed) {
+      mpg_framed_hw_t hw = {nullptr, hw_read, hw_write, hw_tx_idle, hw_now};
+      framed = mpg_framed_create(&hw);
+      if (!framed) {
+        Serial.println("[grbl] framed alloc failed — staying plain");
+        use_framed = false;
+        return;
       }
-      continue;
-    }
-    if (rx_len + 1 < sizeof(rx_line)) {
-      rx_line[rx_len++] = (char)c;
+      mpg_framed_set_baud(framed, GRBL_UART_BAUD);
     } else {
-      rx_len = 0;
+      mpg_framed_reset(framed);
     }
+    Serial.println("[grbl] transport: FRAMED (Plugin_mpg_transport)");
+  } else {
+    Serial.println("[grbl] transport: PLAIN ASCII");
   }
 }
 
@@ -103,8 +181,15 @@ void grbl_link_begin(void) {
   GrblSerial.begin(GRBL_UART_BAUD, SERIAL_8N1, GRBL_UART_RX, GRBL_UART_TX);
   delay(20);
   while (GrblSerial.available()) GrblSerial.read();
-  Serial.printf("[grbl] UART%d TX=%d RX=%d @ %d\n", GRBL_UART_NUM, GRBL_UART_TX, GRBL_UART_RX,
-                GRBL_UART_BAUD);
+
+#if defined(GRBL_TRANSPORT_FRAMED) && GRBL_TRANSPORT_FRAMED
+  ensure_framed(true);
+#else
+  ensure_framed(false);
+#endif
+
+  Serial.printf("[grbl] UART%d TX=%d RX=%d @ %d  mode=%s\n", GRBL_UART_NUM, GRBL_UART_TX,
+                GRBL_UART_RX, GRBL_UART_BAUD, use_framed ? "framed" : "plain");
   last_status_tx_ms = 0;
   last_status_rx_ms = 0;
   want_mpg = true;
@@ -114,7 +199,9 @@ void grbl_link_poll(void) {
   drain_rx();
 
   const uint32_t now = millis();
-  g_status.online = ever_seen && (now - last_status_rx_ms) < 800u;
+  // In framed mode, also require link_up once we've tried
+  bool link_ok = !use_framed || !framed || mpg_framed_link_up(framed) || ever_seen;
+  g_status.online = ever_seen && link_ok && (now - last_status_rx_ms) < 800u;
   g_status.status_age_ms = ever_seen ? (now - last_status_rx_ms) : 0xFFFFFFFFu;
 
   if (now - last_status_tx_ms >= 100u) {
@@ -138,6 +225,18 @@ bool grbl_link_get_status(grbl_status_t *out) {
 }
 
 bool grbl_link_online(void) { return g_status.online; }
+
+bool grbl_link_framed(void) { return use_framed; }
+
+void grbl_link_set_framed(bool framed_on) {
+  if (framed_on == use_framed) return;
+  // Flush UART junk when switching modes
+  while (GrblSerial.available()) GrblSerial.read();
+  ensure_framed(framed_on);
+  ever_seen = false;
+  last_status_rx_ms = 0;
+  status_reset_defaults();
+}
 
 void grbl_link_set_mpg(bool want_control) {
   want_mpg = want_control;

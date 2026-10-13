@@ -46,7 +46,7 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 ## Status
 
 * CrowPanel Advance 7″ bring-up + SmartPendant-style MPG chrome: **in `firmware-esp32/`**
-* grblHAL plain UART link (UART1-OUT IO20/IO19 @ 115200): **wired** — status, MPG, jog, hold, zero; framed transport still TODO
+* grblHAL UART link (UART1-OUT IO20/IO19 @ 115200): **wired** — plain ASCII default; framed `Plugin_mpg_transport` selectable in SETTINGS
 * G-code toolpath preview from parsed NC (`jobs/sample-badge.nc`): **wired** in firmware + simulator (load custom `.nc` in the lab GCODE tab)
 * OVERRIDE / FEED tabs with grblHAL realtime override bytes + power feed: **wired**
 * Full screen set (probe, sender, …): **partially stubbed** (PROBE / SETTINGS)

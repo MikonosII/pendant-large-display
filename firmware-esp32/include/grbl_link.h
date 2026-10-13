@@ -58,6 +58,13 @@ typedef enum {
 /** Send one realtime override command. */
 void grbl_link_override(grbl_ov_t cmd);
 
+/**
+ * Transport mode. Plain ASCII is the default (matches stock grblHAL UART).
+ * Framed mode speaks Plugin_mpg_transport (SOF/CRC/ACK) — both ends must match.
+ */
+bool grbl_link_framed(void);
+void grbl_link_set_framed(bool framed_on);
+
 #ifdef __cplusplus
 }
 #endif

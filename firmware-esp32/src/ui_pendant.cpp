@@ -16,6 +16,9 @@ static lv_obj_t *content;
 static lv_obj_t *mpg_panel;
 static lv_obj_t *ov_panel;
 static lv_obj_t *feed_panel;
+static lv_obj_t *settings_panel;
+static lv_obj_t *transport_btn;
+static lv_obj_t *transport_lbl;
 static lv_obj_t *other_panel;
 static lv_obj_t *status_bar;
 static lv_obj_t *mpg_btn;
@@ -351,12 +354,29 @@ static void on_pf_feed_bump(lv_event_t *e) {
   refresh_power_feed_ui();
 }
 
+static void refresh_transport_ui() {
+  if (!transport_lbl) return;
+  lv_label_set_text(transport_lbl, grbl_link_framed() ? "Framed" : "Plain");
+  if (transport_btn) {
+    lv_obj_set_style_bg_color(transport_btn,
+                              grbl_link_framed() ? lv_color_hex(0x3d5a80) : lv_color_hex(0x2f2f2f),
+                              0);
+  }
+}
+
+static void on_transport_toggle(lv_event_t *e) {
+  (void)e;
+  grbl_link_set_framed(!grbl_link_framed());
+  refresh_transport_ui();
+}
+
 static void show_page(int idx) {
   page_idx = idx;
   lv_label_set_text(page_lbl, k_pages[idx]);
   lv_obj_add_flag(mpg_panel, LV_OBJ_FLAG_HIDDEN);
   if (ov_panel) lv_obj_add_flag(ov_panel, LV_OBJ_FLAG_HIDDEN);
   if (feed_panel) lv_obj_add_flag(feed_panel, LV_OBJ_FLAG_HIDDEN);
+  if (settings_panel) lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
 
   if (idx == 0) {
@@ -367,6 +387,9 @@ static void show_page(int idx) {
   } else if (idx == 2 && feed_panel) {
     lv_obj_clear_flag(feed_panel, LV_OBJ_FLAG_HIDDEN);
     refresh_power_feed_ui();
+  } else if (idx == 5 && settings_panel) {
+    lv_obj_clear_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
+    refresh_transport_ui();
   } else {
     lv_obj_clear_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
     if (idx == 3 && job_lbl) {
@@ -933,6 +956,52 @@ void ui_pendant_create() {
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
     lv_obj_set_pos(hint, 4, 280);
+  }
+
+  // ----- SETTINGS panel -----
+  settings_panel = lv_obj_create(content);
+  lv_obj_set_size(settings_panel, UI_H_RES - 12, content_h - 8);
+  lv_obj_set_pos(settings_panel, 0, 0);
+  lv_obj_set_style_bg_opa(settings_panel, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(settings_panel, 0, 0);
+  lv_obj_set_style_pad_all(settings_panel, 8, 0);
+  lv_obj_clear_flag(settings_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
+
+  {
+    lv_obj_t *cap = lv_label_create(settings_panel);
+    lv_label_set_text(cap, "SETTINGS");
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(cap, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(cap, 4, 8);
+
+    lv_obj_t *tc = lv_label_create(settings_panel);
+    lv_label_set_text(tc, "UART TRANSPORT");
+    lv_obj_set_style_text_font(tc, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(tc, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(tc, 4, 48);
+
+    transport_btn = lv_btn_create(settings_panel);
+    lv_obj_set_size(transport_btn, UI_H_RES - 28, 52);
+    lv_obj_set_pos(transport_btn, 4, 72);
+    style_chrome_btn(transport_btn, false);
+    transport_lbl = lv_label_create(transport_btn);
+    lv_label_set_text(transport_lbl, "Plain");
+    lv_obj_set_style_text_font(transport_lbl, &lv_font_montserrat_20, 0);
+    lv_obj_center(transport_lbl);
+    lv_obj_add_event_cb(transport_btn, on_transport_toggle, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *hint = lv_label_create(settings_panel);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(hint, UI_H_RES - 28);
+    lv_label_set_text(hint,
+                      "Plain: stock grblHAL ASCII @ 115200.\n"
+                      "Framed: Plugin_mpg_transport (SOF/CRC/ACK).\n"
+                      "Both ends must use the same mode.");
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(hint, 4, 140);
+    refresh_transport_ui();
   }
 
   other_panel = lv_obj_create(content);
