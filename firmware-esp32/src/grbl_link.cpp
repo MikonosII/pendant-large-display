@@ -8,6 +8,7 @@
 // Realtime / legacy bytes (grblHAL protocol.c)
 static const uint8_t kCmdStatus = '?';
 static const uint8_t kCmdFeedHold = '!';
+static const uint8_t kCmdCycleStart = '~';
 static const uint8_t kCmdJogCancel = 0x85;
 static const uint8_t kCmdMpgToggle = 0x8B;
 
@@ -148,6 +149,8 @@ void grbl_link_set_mpg(bool want_control) {
 }
 
 void grbl_link_feed_hold(void) { send_rt(kCmdFeedHold); }
+
+void grbl_link_cycle_start(void) { send_rt(kCmdCycleStart); }
 
 void grbl_link_jog_cancel(void) { send_rt(kCmdJogCancel); }
 

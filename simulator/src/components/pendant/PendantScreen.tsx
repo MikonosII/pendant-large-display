@@ -43,6 +43,7 @@ export function PendantScreen({ profile, scale }: Props) {
   const [rapidOv, setRapidOv] = useState(100);
   const [powerFeed, setPowerFeed] = useState(300);
   const [job, setJob] = useState(INITIAL_JOB);
+  const [startFlash, setStartFlash] = useState(false);
 
   const bumpOv = (
     kind: "feed" | "speed" | "rapid",
@@ -163,6 +164,12 @@ export function PendantScreen({ profile, scale }: Props) {
               onLaser={(d) =>
                 setLaserCmd((s) => Math.min(1000, Math.max(0, s + d)))
               }
+              onStart={() => {
+                // Lab stand-in for realtime '~' cycle start
+                setStartFlash(true);
+                window.setTimeout(() => setStartFlash(false), 800);
+              }}
+              startFlash={startFlash}
             />
           )}
           {page === "OVERRIDE" && (
@@ -438,6 +445,8 @@ function MpgView({
   onStep,
   onZero,
   onLaser,
+  onStart,
+  startFlash,
 }: {
   axes: Axis[];
   activeAxis: number;
@@ -455,6 +464,8 @@ function MpgView({
   onStep: (s: number) => void;
   onZero: (i: number) => void;
   onLaser: (d: number) => void;
+  onStart: () => void;
+  startFlash: boolean;
 }) {
   const steps = [0.01, 0.1, 1, 10];
   const laserOn = laserCmd > 0;
@@ -573,6 +584,17 @@ function MpgView({
           ))}
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={onStart}
+        className={cn(
+          "mt-0.5 w-full rounded-sm border border-emerald-800 py-2.5 text-sm font-bold tracking-wide text-white transition-colors",
+          startFlash ? "bg-emerald-400 text-emerald-950" : "bg-emerald-600"
+        )}
+      >
+        START
+      </button>
     </div>
   );
 }

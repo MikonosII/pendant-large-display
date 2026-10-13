@@ -50,6 +50,7 @@ static lv_obj_t *axis_wpos[3];
 static lv_obj_t *axis_mpos[3];
 static lv_obj_t *step_btns[4];
 static lv_obj_t *soft_btns[3];
+static lv_obj_t *start_btn;
 
 static lv_obj_t *feed_lbl;
 static lv_obj_t *laser_cmd_lbl;
@@ -231,6 +232,16 @@ static void refresh_power_feed_ui() {
   }
   for (int i = 0; i < 3; i++) {
     if (pf_axis_btns[i]) style_chrome_btn(pf_axis_btns[i], i == active_axis);
+  }
+}
+
+static void on_start(lv_event_t *e) {
+  (void)e;
+  if (grbl_link_online()) {
+    grbl_link_cycle_start();
+    Serial.println("[grbl] cycle start");
+  } else {
+    lv_label_set_text(state_lbl, "Start  ·  demo (no link)");
   }
 }
 
@@ -749,6 +760,21 @@ void ui_pendant_create() {
     style_chrome_btn(step_btns[i], i == step_idx);
     lv_obj_add_event_cb(step_btns[i], on_step, LV_EVENT_CLICKED, (void *)(intptr_t)i);
   }
+
+  // Confirm / run — cycle start after job is loaded on the controller
+  start_btn = lv_btn_create(mpg_panel);
+  lv_obj_set_size(start_btn, UI_H_RES - 12, 48);
+  lv_obj_set_pos(start_btn, 0, step_y + 48);
+  lv_obj_set_style_radius(start_btn, 2, 0);
+  lv_obj_set_style_border_width(start_btn, 1, 0);
+  lv_obj_set_style_border_color(start_btn, lv_color_hex(0x065f46), 0);
+  lv_obj_set_style_bg_color(start_btn, lv_color_hex(0x059669), 0);
+  lv_obj_set_style_text_color(start_btn, lv_color_hex(0xffffff), 0);
+  lv_obj_t *start_lbl = lv_label_create(start_btn);
+  lv_label_set_text(start_lbl, "START");
+  lv_obj_set_style_text_font(start_lbl, &lv_font_montserrat_20, 0);
+  lv_obj_center(start_lbl);
+  lv_obj_add_event_cb(start_btn, on_start, LV_EVENT_CLICKED, NULL);
 
   // ----- OVERRIDE panel -----
   ov_panel = lv_obj_create(content);

@@ -24,6 +24,9 @@ void grbl_link_set_mpg(bool want_control);
 /** Soft feed hold (`!`). */
 void grbl_link_feed_hold(void);
 
+/** Cycle start / resume (`~`). */
+void grbl_link_cycle_start(void);
+
 /** Cancel jog (0x85). */
 void grbl_link_jog_cancel(void);
 

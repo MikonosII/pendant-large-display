@@ -40,6 +40,9 @@ Use `crowpanel-advance-7-v12` if your board is an older Advance revision (differ
 * Offline demo jog/telemetry when no controller answers (status bar shows `Offline · demo`)
 * **G-code toolpath preview** — parses embedded `jobs/sample-badge.nc` (G0/G1/G2/G3, M3/M4/M5, S) into the MPG canvas
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
+* **MPG START** — green confirm button sends cycle start (`~`) so a job already on the controller can be released from the pendant
+
+LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. The pendant preview is from NC loaded/parsed on the pendant (`sample-badge.nc` or a file in the lab). Use **START** after the controller has the job (or is in Hold) to cycle-start from the device.
 
 ### Wire to grblHAL (SKR / controller)
 
