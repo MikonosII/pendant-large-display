@@ -27,10 +27,9 @@ const INITIAL_JOB = (() => {
 
 type Props = {
   profile: ScreenProfile;
-  scale: number;
 };
 
-export function PendantScreen({ profile, scale }: Props) {
+export function PendantScreen({ profile }: Props) {
   const [page, setPage] = useState<PageId>("MPG");
   const [mpgOn, setMpgOn] = useState(true);
   const [axes, setAxes] = useState(INITIAL_AXES);
@@ -114,8 +113,9 @@ export function PendantScreen({ profile, scale }: Props) {
     <div
       className="relative overflow-hidden rounded-sm shadow-[0_20px_60px_rgba(0,0,0,0.45)] ring-1 ring-black/40"
       style={{
-        width: profile.logicalW * scale,
-        height: profile.logicalH * scale,
+        // 1:1 logical pixels — CSS zoom/transform scale breaks pointer hit-testing
+        width: profile.logicalW,
+        height: profile.logicalH,
         background: "#2a2a2a",
         fontFamily: "var(--font-ibm-plex-mono), ui-monospace, monospace",
       }}
@@ -124,9 +124,6 @@ export function PendantScreen({ profile, scale }: Props) {
         style={{
           width: profile.logicalW,
           height: profile.logicalH,
-          // transform (not CSS zoom) so hit-testing matches the scaled paint box
-          transform: `scale(${scale})`,
-          transformOrigin: "top left",
         }}
       >
         <div

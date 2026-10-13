@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PendantScreen } from "@/components/pendant/PendantScreen";
 import { PROFILES, type ProfileId } from "@/lib/screen-profiles";
@@ -8,18 +8,7 @@ import { cn } from "@/lib/utils";
 
 export function LayoutLab() {
   const [profileId, setProfileId] = useState<ProfileId>(2);
-  const [viewportH, setViewportH] = useState(800);
   const profile = PROFILES.find((p) => p.id === profileId) ?? PROFILES[2];
-
-  useEffect(() => {
-    const update = () => setViewportH(window.innerHeight);
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
-
-  const maxH = Math.min(720, viewportH - 120);
-  const scale = Math.max(0.55, Math.min(1.35, maxH / profile.logicalH));
 
   const areaRatio =
     (profile.logicalW * profile.logicalH) / (320 * 480);
@@ -112,7 +101,7 @@ export function LayoutLab() {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col items-center gap-4">
+      <main className="flex min-w-0 flex-1 flex-col items-center gap-4 overflow-x-auto">
         <div className="rounded-[1.25rem] border border-zinc-700/80 bg-gradient-to-b from-zinc-700 to-zinc-900 p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between px-1 text-[10px] uppercase tracking-[0.18em] text-zinc-400">
             <span>SmartPendant</span>
@@ -120,14 +109,15 @@ export function LayoutLab() {
               {profile.logicalW}×{profile.logicalH}
             </span>
           </div>
-          <PendantScreen profile={profile} scale={scale} />
+          <PendantScreen profile={profile} />
           <div className="mt-3 flex justify-center">
             <div className="h-2 w-16 rounded-full bg-zinc-600" />
           </div>
         </div>
         <p className="max-w-md text-center text-xs text-zinc-500">
-          Scaled preview ({scale.toFixed(2)}×). Firmware uses the same chrome
-          metrics from <code className="text-zinc-700">ScreenConfig.h</code>.
+          1:1 logical pixels (no CSS scale — keeps touch targets clickable).
+          Firmware uses the same chrome metrics from{" "}
+          <code className="text-zinc-700">ScreenConfig.h</code>.
         </p>
       </main>
     </div>
