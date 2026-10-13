@@ -336,6 +336,7 @@ export function PendantScreen({ profile }: Props) {
               headX={axes[0].wpos}
               headY={axes[1].wpos}
               laserOn={laserCmd > 0}
+              roomy={roomy}
               onLoad={(name, nc) => {
                 const { path, warnings } = parseGcodeToolpath(nc);
                 setJob({ name, path, warnings, source: nc });
@@ -352,6 +353,7 @@ export function PendantScreen({ profile }: Props) {
               probeStrict={probeStrict}
               probeContact={probeContact}
               probeResult={probeResult}
+              roomy={roomy}
               onSelectAxis={setActiveAxis}
               onFeed={setProbeFeed}
               onToggleStrict={() => setProbeStrict((v) => !v)}
@@ -392,6 +394,7 @@ export function PendantScreen({ profile }: Props) {
               onToggleFramed={() => setFramedTransport((v) => !v)}
               lfsOk={lfsOk}
               sdOk={sdOk}
+              roomy={roomy}
             />
           )}
           {page !== "MPG" &&
@@ -669,7 +672,8 @@ function ToolpathPreview({
   laserOn: boolean;
   path: PathSeg[];
   jobName: string;
-  compact?: boolean;
+  /** true = Advance compact; "stock" = tighter 3.5″ preview */
+  compact?: boolean | "stock";
 }) {
   const bounds = toolpathBounds(path);
   const vb = `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`;
@@ -693,7 +697,11 @@ function ToolpathPreview({
     <div
       className={cn(
         "relative overflow-hidden rounded-sm border border-[#111] bg-[#1a1a1a]",
-        compact ? "h-[140px] shrink-0" : "min-h-0 flex-1",
+        compact === "stock"
+          ? "h-[88px] shrink-0"
+          : compact
+            ? "h-[140px] shrink-0"
+            : "min-h-0 flex-1",
       )}
     >
       <div className="absolute left-1.5 top-1 z-10 max-w-[90%] truncate text-[8px] uppercase tracking-wider text-zinc-500">
@@ -1430,6 +1438,7 @@ function GcodeView({
   headX,
   headY,
   laserOn,
+  roomy,
   onLoad,
   onReloadSample,
 }: {
@@ -1442,6 +1451,7 @@ function GcodeView({
   headX: number;
   headY: number;
   laserOn: boolean;
+  roomy: boolean;
   onLoad: (name: string, nc: string) => void;
   onReloadSample: () => void;
 }) {
@@ -1478,38 +1488,77 @@ function GcodeView({
           : "Ready · lab mock";
 
   return (
-    <div className="flex h-full flex-col gap-2 px-2 py-2 text-zinc-200">
+    <div
+      className={cn(
+        "flex h-full flex-col text-zinc-200",
+        roomy
+          ? "gap-2 overflow-y-auto px-2 py-2"
+          : "gap-1 overflow-hidden px-1 py-0.5"
+      )}
+    >
       <ToolpathPreview
         x={headX}
         y={headY}
         laserOn={laserOn}
         path={path}
         jobName={name}
-        compact
+        compact={roomy ? true : "stock"}
       />
-      <div>
-        <div className="text-[10px] uppercase tracking-widest text-zinc-400">
-          G-code / jobs
-        </div>
-        <div className="mt-0.5 text-sm font-semibold text-white">{name}</div>
-        <div className="text-[11px] tabular-nums text-zinc-300">
-          {segCount} path segments
-        </div>
-        <div className="mt-1 text-[10px] text-zinc-400">
-          LFS {lfsOk ? "ok" : "—"} · SD {sdOk ? "ok" : "—"} (lab: browser file)
-        </div>
+      <div className="shrink-0">
+        {roomy ? (
+          <>
+            <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+              G-code / jobs
+            </div>
+            <div className="mt-0.5 text-sm font-semibold text-white">{name}</div>
+            <div className="text-[11px] tabular-nums text-zinc-300">
+              {segCount} path segments
+            </div>
+            <div className="mt-1 text-[10px] text-zinc-400">
+              LFS {lfsOk ? "ok" : "—"} · SD {sdOk ? "ok" : "—"} (lab: browser
+              file)
+            </div>
+          </>
+        ) : (
+          <div className="truncate text-[11px] font-semibold text-white">
+            {name}{" "}
+            <span className="font-normal text-zinc-400">
+              · {segCount} seg · LFS {lfsOk ? "ok" : "—"} · SD{" "}
+              {sdOk ? "ok" : "—"}
+            </span>
+          </div>
+        )}
       </div>
-      {warnings.length > 0 && (
+      {roomy && warnings.length > 0 && (
         <div className="text-[10px] leading-snug text-amber-300/90">
           {warnings.slice(0, 4).join(" · ")}
         </div>
       )}
-      <div className="min-h-0 flex-1 space-y-2 overflow-auto">
-        <div className="rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px]">
+      <div
+        className={cn(
+          "shrink-0 space-y-1",
+          roomy && "min-h-0 flex-1 space-y-2 overflow-auto"
+        )}
+      >
+        <div
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#2a2a2a] text-[11px]",
+            roomy ? "px-3 py-2" : "px-2 py-1"
+          )}
+        >
           <div className="font-semibold text-white">ROM · sample-badge.nc</div>
-          <div className="text-[10px] text-zinc-400">embedded · always listed on device</div>
+          {roomy && (
+            <div className="text-[10px] text-zinc-400">
+              embedded · always listed on device
+            </div>
+          )}
         </div>
-        <label className="inline-flex w-full cursor-pointer items-center justify-center rounded-sm border border-[#222] bg-[#2f2f2f] px-3 py-2 text-[11px] font-semibold text-white">
+        <label
+          className={cn(
+            "inline-flex w-full cursor-pointer items-center justify-center rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+            roomy ? "px-3 py-2 text-[11px]" : "px-2 py-1.5 text-[10px]"
+          )}
+        >
           Load .nc / .gcode
           <input
             type="file"
@@ -1527,12 +1576,15 @@ function GcodeView({
         <button
           type="button"
           onClick={onReloadSample}
-          className="w-full rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px] font-semibold text-zinc-200"
+          className={cn(
+            "w-full rounded-sm border border-[#222] bg-[#2a2a2a] font-semibold text-zinc-200",
+            roomy ? "px-3 py-2 text-[11px]" : "px-2 py-1.5 text-[10px]"
+          )}
         >
-          Reload sample-badge.nc
+          {roomy ? "Reload sample-badge.nc" : "Reload sample"}
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid shrink-0 grid-cols-3 gap-1">
         <button
           type="button"
           onClick={() => {
@@ -1543,8 +1595,9 @@ function GcodeView({
             }
           }}
           className={cn(
-            "rounded-sm border border-[#222] py-3 text-sm font-semibold text-white",
-            stream === "run" ? "bg-[#2e7d32]" : "bg-[#1b5e20]",
+            "rounded-sm border border-[#222] font-semibold text-white",
+            roomy ? "py-3 text-sm" : "py-2 text-[11px]",
+            stream === "run" ? "bg-[#2e7d32]" : "bg-[#1b5e20]"
           )}
         >
           RUN
@@ -1555,8 +1608,9 @@ function GcodeView({
             if (stream === "run") setStream("hold");
           }}
           className={cn(
-            "rounded-sm border border-[#222] py-3 text-sm font-semibold text-white",
-            stream === "hold" ? "bg-[#555]" : "bg-[#2f2f2f]",
+            "rounded-sm border border-[#222] font-semibold text-white",
+            roomy ? "py-3 text-sm" : "py-2 text-[11px]",
+            stream === "hold" ? "bg-[#555]" : "bg-[#2f2f2f]"
           )}
         >
           HOLD
@@ -1567,19 +1621,30 @@ function GcodeView({
             setStream("idle");
             setSent(0);
           }}
-          className="rounded-sm border border-[#222] bg-[#6b1b1b] py-3 text-sm font-semibold text-white"
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#6b1b1b] font-semibold text-white",
+            roomy ? "py-3 text-sm" : "py-2 text-[11px]"
+          )}
         >
           STOP
         </button>
       </div>
-      <div className="text-[11px] leading-snug text-[#aad4aa]">
+      <div
+        className={cn(
+          "shrink-0 leading-snug text-[#aad4aa]",
+          roomy ? "text-[11px]" : "text-[10px]"
+        )}
+      >
         {msg}
-        <br />
+        {roomy ? <br /> : " · "}
         {sent} / {totalLines} lines
       </div>
-      <p className="text-[10px] leading-relaxed text-zinc-400">
-        Device streams NC to grblHAL one line per ok. Lab mocks progress only.
-      </p>
+      {roomy && (
+        <p className="text-[10px] leading-relaxed text-zinc-400">
+          Device streams NC to grblHAL one line per ok. Lab mocks progress
+          only.
+        </p>
+      )}
     </div>
   );
 }
@@ -1592,6 +1657,7 @@ function ProbeView({
   probeStrict,
   probeContact,
   probeResult,
+  roomy,
   onSelectAxis,
   onFeed,
   onToggleStrict,
@@ -1605,6 +1671,7 @@ function ProbeView({
   probeStrict: boolean;
   probeContact: boolean;
   probeResult: string;
+  roomy: boolean;
   onSelectAxis: (i: number) => void;
   onFeed: (v: number) => void;
   onToggleStrict: () => void;
@@ -1612,11 +1679,20 @@ function ProbeView({
   onZero: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col gap-2 px-2 py-2 text-zinc-200">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-400">
-        Probe
-      </div>
-      <div className="text-[9px] uppercase text-zinc-500">Axis</div>
+    <div
+      className={cn(
+        "flex h-full flex-col text-zinc-200",
+        roomy
+          ? "gap-2 overflow-y-auto px-2 py-2"
+          : "gap-1 overflow-hidden px-1 py-0.5"
+      )}
+    >
+      {roomy && (
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+          Probe
+        </div>
+      )}
+      <div className="text-[8px] uppercase text-zinc-500">Axis</div>
       <div className="grid grid-cols-3 gap-1">
         {axes.map((a, i) => (
           <button
@@ -1624,7 +1700,8 @@ function ProbeView({
             type="button"
             onClick={() => onSelectAxis(i)}
             className={cn(
-              "rounded-sm border border-[#222] py-3 text-sm font-bold text-white",
+              "rounded-sm border border-[#222] font-bold text-white",
+              roomy ? "py-3 text-sm" : "py-1.5 text-xs",
               i === activeAxis ? "bg-[#3d5a80]" : "bg-[#2f2f2f]"
             )}
           >
@@ -1632,7 +1709,12 @@ function ProbeView({
           </button>
         ))}
       </div>
-      <div className="text-[12px] tabular-nums text-white">
+      <div
+        className={cn(
+          "tabular-nums text-white",
+          roomy ? "text-[12px]" : "text-[11px]"
+        )}
+      >
         F {probeFeed} · travel {probeTravel} mm ·{" "}
         {probeStrict ? "G38.2" : "G38.3"}
       </div>
@@ -1644,7 +1726,10 @@ function ProbeView({
             onClick={() =>
               onFeed(Math.min(2000, Math.max(10, probeFeed + d)))
             }
-            className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+            className={cn(
+              "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+              roomy ? "py-2 text-[11px]" : "py-1.5 text-[10px]"
+            )}
           >
             {d > 0 ? `+${d}` : d}
           </button>
@@ -1654,47 +1739,69 @@ function ProbeView({
         <button
           type="button"
           onClick={onToggleStrict}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+            roomy ? "py-2 text-[11px]" : "py-1.5 text-[10px]"
+          )}
         >
           G38.2 / G38.3
         </button>
         <button
           type="button"
           onClick={onZero}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+            roomy ? "py-2 text-[11px]" : "py-1.5 text-[10px]"
+          )}
         >
           Zero WPos
         </button>
       </div>
       <div
         className={cn(
-          "text-[13px] font-semibold",
+          "font-semibold",
+          roomy ? "text-[13px]" : "text-[11px]",
           probeContact ? "text-amber-400" : "text-zinc-400"
         )}
       >
         Contact: {probeContact ? "TRIGGERED" : "open"}
       </div>
-      <div className="text-[11px] leading-snug text-zinc-300">{probeResult}</div>
+      <div
+        className={cn(
+          "leading-snug text-zinc-300",
+          roomy ? "text-[11px]" : "truncate text-[10px]"
+        )}
+      >
+        {probeResult}
+      </div>
       <div className="grid grid-cols-2 gap-1">
         <button
           type="button"
           onClick={() => onProbe(-1)}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+            roomy ? "py-3 text-sm" : "py-2 text-[11px]"
+          )}
         >
           Probe −
         </button>
         <button
           type="button"
           onClick={() => onProbe(1)}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+            roomy ? "py-3 text-sm" : "py-2 text-[11px]"
+          )}
         >
           Probe +
         </button>
       </div>
-      <p className="text-[10px] leading-relaxed text-zinc-400">
-        Soft Probe −/+ send G38 toward WPos ± travel. Requires Idle + MPG.
-        [PRB:] is always machine coordinates.
-      </p>
+      {roomy && (
+        <p className="text-[10px] leading-relaxed text-zinc-400">
+          Soft Probe −/+ send G38 toward WPos ± travel. Requires Idle + MPG.
+          [PRB:] is always machine coordinates.
+        </p>
+      )}
     </div>
   );
 }
@@ -1704,50 +1811,90 @@ function SettingsView({
   onToggleFramed,
   lfsOk,
   sdOk,
+  roomy,
 }: {
   framed: boolean;
   onToggleFramed: () => void;
   lfsOk: boolean;
   sdOk: boolean;
+  roomy: boolean;
 }) {
   return (
-    <div className="flex h-full flex-col gap-3 px-2 py-3 text-zinc-200">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-400">
-        Settings
-      </div>
+    <div
+      className={cn(
+        "flex h-full flex-col text-zinc-200",
+        roomy
+          ? "gap-3 overflow-y-auto px-2 py-3"
+          : "gap-1.5 overflow-hidden px-1 py-1"
+      )}
+    >
+      {roomy && (
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+          Settings
+        </div>
+      )}
       <div>
-        <div className="text-[9px] uppercase text-zinc-500">UART transport</div>
+        <div className="text-[8px] uppercase text-zinc-500">UART transport</div>
         <button
           type="button"
           onClick={onToggleFramed}
           className={cn(
-            "mt-1 w-full rounded-sm border border-[#222] py-3 text-sm font-bold text-white",
+            "mt-0.5 w-full rounded-sm border border-[#222] font-bold text-white",
+            roomy ? "mt-1 py-3 text-sm" : "py-2 text-[11px]",
             framed ? "bg-[#3d5a80]" : "bg-[#2f2f2f]"
           )}
         >
           {framed ? "Framed" : "Plain"}
         </button>
-        <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">
-          Plain matches stock grblHAL ASCII. Framed is Plugin_mpg_transport
-          (SOF/CRC/ACK) — both ends must match. Lab toggle is visual only;
-          firmware switches the real UART path.
+        <p
+          className={cn(
+            "text-zinc-400",
+            roomy
+              ? "mt-2 text-[10px] leading-relaxed"
+              : "mt-1 text-[9px] leading-snug"
+          )}
+        >
+          {roomy
+            ? "Plain matches stock grblHAL ASCII. Framed is Plugin_mpg_transport (SOF/CRC/ACK) — both ends must match. Lab toggle is visual only; firmware switches the real UART path."
+            : "Plain = grblHAL ASCII. Framed = Plugin_mpg_transport (both ends must match)."}
         </p>
       </div>
       <div>
-        <div className="text-[9px] uppercase text-zinc-500">Handwheel / I2C</div>
-        <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-          GPIO A/B default −1 (TF card claims IO4–6). Prefer PCF8574 on
-          SDA15/SCL16 (`I2C_MPG_ENABLE=1`, addr 0x20): P0/P1 wheel, P2–P4
-          axis, P5 step cycle. Soft −/+ Jog stands in for detents in the lab.
+        <div className="text-[8px] uppercase text-zinc-500">Handwheel / I2C</div>
+        <p
+          className={cn(
+            "text-zinc-400",
+            roomy
+              ? "mt-1 text-[10px] leading-relaxed"
+              : "mt-0.5 text-[9px] leading-snug"
+          )}
+        >
+          {roomy
+            ? "GPIO A/B default −1 (TF card claims IO4–6). Prefer PCF8574 on SDA15/SCL16 (`I2C_MPG_ENABLE=1`, addr 0x20): P0/P1 wheel, P2–P4 axis, P5 step cycle. Soft −/+ Jog stands in for detents in the lab."
+            : "GPIO A/B default −1. Prefer PCF8574 @ 0x20 on SDA15/SCL16 (P0/P1 wheel, P2–P4 axis, P5 step)."}
         </p>
       </div>
       <div>
-        <div className="text-[9px] uppercase text-zinc-500">Job store</div>
-        <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-          LittleFS {lfsOk ? "ok" : "—"} · SD/TF {sdOk ? "mounted" : "—"} (lab
-          mocks LFS). Device lists embedded sample + `/jobs` on LFS and SD.
+        <div className="text-[8px] uppercase text-zinc-500">Job store</div>
+        <p
+          className={cn(
+            "text-zinc-400",
+            roomy
+              ? "mt-1 text-[10px] leading-relaxed"
+              : "mt-0.5 text-[9px] leading-snug"
+          )}
+        >
+          LittleFS {lfsOk ? "ok" : "—"} · SD/TF {sdOk ? "mounted" : "—"}
+          {roomy
+            ? " (lab mocks LFS). Device lists embedded sample + `/jobs` on LFS and SD."
+            : " · sample + `/jobs` on LFS/SD."}
         </p>
       </div>
+      {!roomy && (
+        <p className="text-[9px] leading-snug text-zinc-500">
+          Edit `/settings.cfg` on SD or LittleFS — reboot to apply. No rebuild.
+        </p>
+      )}
     </div>
   );
 }
