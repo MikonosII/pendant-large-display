@@ -27,9 +27,10 @@ export function LayoutLab() {
             Large Screen Lab
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
-            Preview the CrowPanel Advance MPG dashboard (5″ default, 7″
-            kept as a large-screen option): toolpath, DRO, overrides, probe,
-            and job load. Stock 3.5″ stays DRO-only.
+            Preview CrowPanel Advance MPG (5″ default, 7″ kept): live map,
+            macros, laser test, overrides, probe, jobs. Stock 3.5″/4.0″ keep
+            the original DRO + steps layout; settings and other tabs stay
+            shared.
           </p>
         </div>
 

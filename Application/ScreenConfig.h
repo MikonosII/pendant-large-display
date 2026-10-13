@@ -3,12 +3,12 @@
 //  @details Display size profiles for the SmartPendant large-screen fork.
 //
 //  Upstream SmartPendant targets a 3.5" ILI9488 panel (480×320 native,
-//  shown in portrait as 320×480). This fork adds selectable profiles so the
-//  same firmware can drive a physically larger panel.
+//  shown in portrait as 320×480). Stock 3.5"/4.0" keep the original DRO +
+//  steps chrome; large-screen MPG (map, macros, laser test) is Advance-only.
+//  Non-display work (settings.cfg, macros.cfg, UART, laser dout, …) is shared.
 //
-//  Target for this fork: Elecrow CrowPanel Advance 7" (GW1076-i2), native
-//  800×480 RGB, UI in portrait as 480×800. Flash firmware-esp32/ to that
-//  board — the STM32 ILI9488 path below is layout-reference only.
+//  Flash target: CrowPanel Advance via firmware-esp32/ (480×800 portrait).
+//  The STM32 ILI9488 path below is layout-reference only.
 //
 //  Select a profile with -DSCREEN_PROFILE=... at compile time, or edit the
 //  default below. The interactive layout lab under simulator/ mirrors these
