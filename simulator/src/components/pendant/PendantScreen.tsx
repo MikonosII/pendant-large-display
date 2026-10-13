@@ -83,7 +83,7 @@ export function PendantScreen({ profile }: Props) {
   };
 
   const contentH = useMemo(() => {
-    const statusH = 32 + 2;
+    const statusH = 40; // Idle + MPG strip under tabs
     return profile.logicalH - profile.headerH - statusH - profile.softBtnH;
   }, [profile]);
 
@@ -147,6 +147,27 @@ export function PendantScreen({ profile }: Props) {
               {p === "POWER FEED" ? "FEED" : p}
             </button>
           ))}
+        </div>
+
+        <div className="flex h-[40px] items-stretch border-b border-black/40 bg-[#555]">
+          <div className="flex min-w-0 flex-1 flex-col justify-center px-2 py-1">
+            <div className="text-[13px] font-bold leading-none text-white">
+              Idle
+            </div>
+            <div className="mt-0.5 truncate text-[9px] text-zinc-200">
+              Laser · mm · {profile.shortName}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMpgOn((v) => !v)}
+            className={cn(
+              "w-[72px] border-l border-black/40 text-[12px] font-bold transition-colors",
+              mpgOn ? "bg-emerald-600 text-white" : "bg-[#2f2f2f] text-zinc-200"
+            )}
+          >
+            MPG
+          </button>
         </div>
 
         <div
@@ -293,27 +314,6 @@ export function PendantScreen({ profile }: Props) {
             page !== "SETTINGS" && (
               <PlaceholderView title={page} profile={profile} />
             )}
-        </div>
-
-        <div className="flex items-stretch border-t border-black/40 bg-[#555]">
-          <div className="flex min-w-0 flex-1 flex-col justify-center px-2 py-1">
-            <div className="text-[13px] font-bold leading-none text-white">
-              Idle
-            </div>
-            <div className="mt-0.5 truncate text-[9px] text-zinc-200">
-              Laser · mm · {profile.shortName}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMpgOn((v) => !v)}
-            className={cn(
-              "w-[72px] border-l border-black/40 text-[12px] font-bold transition-colors",
-              mpgOn ? "bg-emerald-600 text-white" : "bg-[#2f2f2f] text-zinc-200"
-            )}
-          >
-            MPG
-          </button>
         </div>
 
         <div
@@ -731,12 +731,7 @@ function MpgView({
                 : "border-[#222] bg-[#333]"
             )}
           >
-            <span
-              className={cn(
-                "shrink-0 font-bold text-amber-300",
-                roomy ? "text-base" : "text-base"
-              )}
-            >
+            <span className="shrink-0 text-base font-bold text-amber-300">
               {axis.name}
             </span>
             <div className="min-w-0 flex-1">
@@ -791,29 +786,6 @@ function MpgView({
         </div>
       )}
 
-      <div>
-        <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
-          Step (mm)
-        </div>
-        <div className="grid grid-cols-4 gap-1">
-          {steps.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onStep(s)}
-              className={cn(
-                "rounded-sm border py-1.5 text-[11px] font-semibold",
-                step === s
-                  ? "border-sky-400 bg-sky-700 text-white"
-                  : "border-[#222] bg-[#2f2f2f] text-zinc-200"
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <button
         type="button"
         onClick={onStart}
@@ -837,6 +809,29 @@ function MpgView({
       >
         {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
       </button>
+
+      <div className="mt-auto">
+        <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
+          Step (mm)
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          {steps.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onStep(s)}
+              className={cn(
+                "rounded-sm border py-2 text-[11px] font-semibold",
+                step === s
+                  ? "border-sky-400 bg-sky-700 text-white"
+                  : "border-[#222] bg-[#2f2f2f] text-zinc-200"
+              )}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

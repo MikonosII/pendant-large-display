@@ -1202,9 +1202,33 @@ void ui_pendant_create() {
   const int status_h = 40;
   const int content_h = UI_V_RES - SCREEN_HEADER_H - status_h - SCREEN_SOFT_BTN_H;
 
+  // State + MPG claim sit under the tabs (not above the soft keys)
+  status_bar = lv_obj_create(scr);
+  lv_obj_set_size(status_bar, UI_H_RES, status_h);
+  lv_obj_set_pos(status_bar, 0, SCREEN_HEADER_H);
+  lv_obj_set_style_bg_color(status_bar, lv_color_hex(0x555555), 0);
+  lv_obj_set_style_border_width(status_bar, 0, 0);
+  lv_obj_set_style_pad_all(status_bar, 4, 0);
+  lv_obj_set_style_radius(status_bar, 0, 0);
+
+  state_lbl = lv_label_create(status_bar);
+  lv_label_set_text(state_lbl, "Idle  ·  Laser  ·  mm");
+  lv_obj_set_style_text_color(state_lbl, lv_color_hex(0xffffff), 0);
+  lv_obj_set_style_text_font(state_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_align(state_lbl, LV_ALIGN_LEFT_MID, 4, 0);
+
+  mpg_btn = lv_btn_create(status_bar);
+  lv_obj_set_size(mpg_btn, 72, status_h - 4);
+  lv_obj_align(mpg_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+  lv_obj_t *mpg_lbl = lv_label_create(mpg_btn);
+  lv_label_set_text(mpg_lbl, "MPG");
+  lv_obj_center(mpg_lbl);
+  lv_obj_add_event_cb(mpg_btn, on_mpg, LV_EVENT_CLICKED, NULL);
+  refresh_mpg();
+
   content = lv_obj_create(scr);
   lv_obj_set_size(content, UI_H_RES, content_h);
-  lv_obj_set_pos(content, 0, SCREEN_HEADER_H);
+  lv_obj_set_pos(content, 0, SCREEN_HEADER_H + status_h);
   lv_obj_set_style_bg_color(content, lv_color_hex(0x404040), 0);
   lv_obj_set_style_border_width(content, 0, 0);
   lv_obj_set_style_pad_all(content, 6, 0);
@@ -1222,7 +1246,10 @@ void ui_pendant_create() {
   lv_obj_set_style_pad_all(mpg_panel, 0, 0);
   lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-  const int map_h_px = 200;
+  // Steps sit just above the global Hold / ±Jog soft row
+  const int step_h = 44;
+  const int step_y = (content_h - 8) - step_h;
+  const int map_h_px = 220;
   setup_live_map(mpg_panel, 0, UI_H_RES - 12, map_h_px);
 
   // Denser 3-column DRO under the live map
@@ -1279,25 +1306,11 @@ void ui_pendant_create() {
   lv_obj_add_event_cb(laser_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)1);
   make_telemetry_cell(tele, "OV", &ov_lbl);
 
-  const int step_y = tele_y + 70;
-  for (int i = 0; i < 4; i++) {
-    step_btns[i] = lv_btn_create(mpg_panel);
-    int bw = (UI_H_RES - 12 - 9) / 4;
-    lv_obj_set_size(step_btns[i], bw, 40);
-    lv_obj_set_pos(step_btns[i], i * (bw + 3), step_y);
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%g", k_steps[i]);
-    lv_obj_t *lbl = lv_label_create(step_btns[i]);
-    lv_label_set_text(lbl, buf);
-    lv_obj_center(lbl);
-    style_chrome_btn(step_btns[i], i == step_idx);
-    lv_obj_add_event_cb(step_btns[i], on_step, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-  }
-
   // Confirm / run — cycle start after job is loaded on the controller
+  const int start_y = tele_y + 70;
   start_btn = lv_btn_create(mpg_panel);
   lv_obj_set_size(start_btn, UI_H_RES - 12, 48);
-  lv_obj_set_pos(start_btn, 0, step_y + 48);
+  lv_obj_set_pos(start_btn, 0, start_y);
   lv_obj_set_style_radius(start_btn, 2, 0);
   lv_obj_set_style_border_width(start_btn, 1, 0);
   lv_obj_set_style_border_color(start_btn, lv_color_hex(0x065f46), 0);
@@ -1310,7 +1323,7 @@ void ui_pendant_create() {
   lv_obj_add_event_cb(start_btn, on_start, LV_EVENT_CLICKED, NULL);
 
   // Laser TEST toggle — K+ enable only (PWM/power lives on FEED tab)
-  const int laser_y = step_y + 48 + 52;
+  const int laser_y = start_y + 52;
   laser_test_btn = lv_btn_create(mpg_panel);
   lv_obj_set_size(laser_test_btn, UI_H_RES - 12, 44);
   lv_obj_set_pos(laser_test_btn, 0, laser_y);
@@ -1321,6 +1334,20 @@ void ui_pendant_create() {
   lv_obj_center(laser_test_lbl);
   lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
   refresh_laser_enable_ui();
+
+  for (int i = 0; i < 4; i++) {
+    step_btns[i] = lv_btn_create(mpg_panel);
+    int bw = (UI_H_RES - 12 - 9) / 4;
+    lv_obj_set_size(step_btns[i], bw, step_h);
+    lv_obj_set_pos(step_btns[i], i * (bw + 3), step_y);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%g", k_steps[i]);
+    lv_obj_t *lbl = lv_label_create(step_btns[i]);
+    lv_label_set_text(lbl, buf);
+    lv_obj_center(lbl);
+    style_chrome_btn(step_btns[i], i == step_idx);
+    lv_obj_add_event_cb(step_btns[i], on_step, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+  }
 
   // ----- OVERRIDE panel -----
   ov_panel = lv_obj_create(content);
@@ -1837,28 +1864,6 @@ void ui_pendant_create() {
   lv_obj_set_style_text_color(other_lbl, lv_color_hex(0xffffff), 0);
   lv_obj_center(other_lbl);
   lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
-
-  status_bar = lv_obj_create(scr);
-  lv_obj_set_size(status_bar, UI_H_RES, status_h);
-  lv_obj_set_pos(status_bar, 0, SCREEN_HEADER_H + content_h);
-  lv_obj_set_style_bg_color(status_bar, lv_color_hex(0x555555), 0);
-  lv_obj_set_style_border_width(status_bar, 0, 0);
-  lv_obj_set_style_pad_all(status_bar, 4, 0);
-  lv_obj_set_style_radius(status_bar, 0, 0);
-
-  state_lbl = lv_label_create(status_bar);
-  lv_label_set_text(state_lbl, "Idle  ·  Laser  ·  mm");
-  lv_obj_set_style_text_color(state_lbl, lv_color_hex(0xffffff), 0);
-  lv_obj_align(state_lbl, LV_ALIGN_LEFT_MID, 4, 0);
-
-  mpg_btn = lv_btn_create(status_bar);
-  lv_obj_set_size(mpg_btn, 72, status_h - 4);
-  lv_obj_align(mpg_btn, LV_ALIGN_RIGHT_MID, 0, 0);
-  lv_obj_t *mpg_lbl = lv_label_create(mpg_btn);
-  lv_label_set_text(mpg_lbl, "MPG");
-  lv_obj_center(mpg_lbl);
-  lv_obj_add_event_cb(mpg_btn, on_mpg, LV_EVENT_CLICKED, NULL);
-  refresh_mpg();
 
   lv_obj_t *soft = lv_obj_create(scr);
   lv_obj_set_size(soft, UI_H_RES, SCREEN_SOFT_BTN_H);
