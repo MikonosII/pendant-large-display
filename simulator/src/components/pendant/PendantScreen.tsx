@@ -304,6 +304,7 @@ export function PendantScreen({ profile }: Props) {
               powerFeed={powerFeed}
               laserFeedPct={laserFeedPct}
               laserKOn={laserKOn}
+              roomy={roomy}
               onSelectAxis={setActiveAxis}
               onFeed={setPowerFeed}
               onLaserPct={setLaserFeedPct}
@@ -1214,6 +1215,7 @@ function FeedView({
   powerFeed,
   laserFeedPct,
   laserKOn,
+  roomy,
   onSelectAxis,
   onFeed,
   onLaserPct,
@@ -1226,6 +1228,7 @@ function FeedView({
   powerFeed: number;
   laserFeedPct: number;
   laserKOn: boolean;
+  roomy: boolean;
   onSelectAxis: (i: number) => void;
   onFeed: (n: number) => void;
   onLaserPct: (n: number) => void;
@@ -1233,13 +1236,30 @@ function FeedView({
   onLaserOff: () => void;
   onJog: (dir: 1 | -1) => void;
 }) {
+  // Stock 3.5″/4.0″ must fit without scroll; Advance keeps the roomier spacing.
   return (
-    <div className="flex h-full flex-col gap-3 overflow-y-auto px-1 py-2">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-400">
-        Power feed
-      </div>
+    <div
+      className={cn(
+        "flex h-full flex-col px-1",
+        roomy
+          ? "gap-3 overflow-y-auto py-2"
+          : "gap-1 overflow-hidden py-0.5"
+      )}
+    >
+      {roomy && (
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+          Power feed
+        </div>
+      )}
       <div>
-        <div className="mb-1 text-[9px] uppercase text-zinc-500">Axis</div>
+        <div
+          className={cn(
+            "uppercase text-zinc-500",
+            roomy ? "mb-1 text-[9px]" : "mb-0.5 text-[8px]"
+          )}
+        >
+          Axis
+        </div>
         <div className="grid grid-cols-3 gap-1">
           {axes.map((a, i) => (
             <button
@@ -1247,14 +1267,20 @@ function FeedView({
               type="button"
               onClick={() => onSelectAxis(i)}
               className={cn(
-                "rounded-sm border py-3 text-sm font-bold",
+                "rounded-sm border font-bold",
+                roomy ? "py-3 text-sm" : "py-1.5 text-xs",
                 i === activeAxis
                   ? "border-amber-400 bg-[#3d5a80] text-white"
                   : "border-[#222] bg-[#2f2f2f] text-zinc-200"
               )}
             >
               {a.name}
-              <div className="text-[10px] font-normal tabular-nums text-zinc-300">
+              <div
+                className={cn(
+                  "font-normal tabular-nums text-zinc-300",
+                  roomy ? "text-[10px]" : "text-[9px]"
+                )}
+              >
                 {a.wpos.toFixed(3)}
               </div>
             </button>
@@ -1262,11 +1288,16 @@ function FeedView({
         </div>
       </div>
       <div>
-        <div className="text-[9px] uppercase text-zinc-500">Feed mm/min</div>
-        <div className="text-3xl font-bold tabular-nums text-white">
+        <div className="text-[8px] uppercase text-zinc-500">Feed mm/min</div>
+        <div
+          className={cn(
+            "font-bold tabular-nums text-white",
+            roomy ? "text-3xl" : "text-xl leading-tight"
+          )}
+        >
           {powerFeed}
         </div>
-        <div className="mt-1 grid grid-cols-4 gap-1">
+        <div className={cn("grid grid-cols-4 gap-1", roomy ? "mt-1" : "mt-0.5")}>
           {[-100, -10, 10, 100].map((d) => (
             <button
               key={d}
@@ -1274,7 +1305,10 @@ function FeedView({
               onClick={() =>
                 onFeed(Math.min(10000, Math.max(10, powerFeed + d)))
               }
-              className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+              className={cn(
+                "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+                roomy ? "py-2 text-[11px]" : "py-1.5 text-[10px]"
+              )}
             >
               {d > 0 ? `+${d}` : d}
             </button>
@@ -1285,25 +1319,41 @@ function FeedView({
         <button
           type="button"
           onClick={() => onJog(-1)}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+            roomy ? "py-3 text-sm" : "py-1.5 text-[11px]"
+          )}
         >
-          − Feed 5 mm
+          {roomy ? "− Feed 5 mm" : "− 5 mm"}
         </button>
         <button
           type="button"
           onClick={() => onJog(1)}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-3 text-sm font-semibold text-white"
+          className={cn(
+            "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+            roomy ? "py-3 text-sm" : "py-1.5 text-[11px]"
+          )}
         >
-          + Feed 5 mm
+          {roomy ? "+ Feed 5 mm" : "+ 5 mm"}
         </button>
       </div>
 
-      <div className="border-t border-[#333] pt-2">
-        <div className="text-[9px] uppercase text-zinc-500">Laser power %</div>
-        <div className="text-3xl font-bold tabular-nums text-white">
+      <div
+        className={cn(
+          "border-t border-[#333]",
+          roomy ? "pt-2" : "pt-1"
+        )}
+      >
+        <div className="text-[8px] uppercase text-zinc-500">Laser power %</div>
+        <div
+          className={cn(
+            "font-bold tabular-nums text-white",
+            roomy ? "text-3xl" : "text-xl leading-tight"
+          )}
+        >
           {laserFeedPct.toFixed(1)}%
         </div>
-        <div className="mt-1 grid grid-cols-6 gap-1">
+        <div className={cn("grid grid-cols-6 gap-1", roomy ? "mt-1" : "mt-0.5")}>
           {[
             { d: -10, label: "−10" },
             { d: -1, label: "−1%" },
@@ -1322,18 +1372,22 @@ function FeedView({
                   ) / 10
                 )
               }
-              className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[10px] font-semibold text-white"
+              className={cn(
+                "rounded-sm border border-[#222] bg-[#2f2f2f] font-semibold text-white",
+                roomy ? "py-2 text-[10px]" : "py-1.5 text-[9px]"
+              )}
             >
               {label}
             </button>
           ))}
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-1">
+        <div className={cn("grid grid-cols-2 gap-1", roomy ? "mt-2" : "mt-1")}>
           <button
             type="button"
             onClick={onLaserOn}
             className={cn(
-              "rounded-sm border py-3 text-sm font-bold text-white",
+              "rounded-sm border font-bold text-white",
+              roomy ? "py-3 text-sm" : "py-2 text-[11px]",
               laserKOn
                 ? "border-amber-400 bg-orange-600"
                 : "border-[#222] bg-[#2f2f2f]"
@@ -1345,7 +1399,8 @@ function FeedView({
             type="button"
             onClick={onLaserOff}
             className={cn(
-              "rounded-sm border py-3 text-sm font-bold text-white",
+              "rounded-sm border font-bold text-white",
+              roomy ? "py-3 text-sm" : "py-2 text-[11px]",
               !laserKOn
                 ? "border-[#3d5a80] bg-[#3d5a80]"
                 : "border-[#222] bg-[#2f2f2f]"
@@ -1354,10 +1409,12 @@ function FeedView({
             LASER OFF
           </button>
         </div>
-        <p className="mt-1 text-[9px] leading-snug text-zinc-500">
-          ON = K+ (M64) + M3 from %. OFF = M65 + M5. MPG LASER TEST toggles
-          K+ only.
-        </p>
+        {roomy && (
+          <p className="mt-1 text-[9px] leading-snug text-zinc-500">
+            ON = K+ (M64) + M3 from %. OFF = M65 + M5. MPG LASER TEST toggles
+            K+ only.
+          </p>
+        )}
       </div>
     </div>
   );
