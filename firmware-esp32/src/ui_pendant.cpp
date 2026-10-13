@@ -1,6 +1,7 @@
 #include "ui_pendant.h"
 #include "pins_config.h"
-#include "demo_toolpath.h"
+#include "gcode_path.h"
+#include "sample_job_nc.h"
 #include "grbl_link.h"
 #include <Arduino.h>
 #include <stdio.h>
@@ -18,6 +19,7 @@ static lv_obj_t *status_bar;
 static lv_obj_t *mpg_btn;
 static lv_obj_t *state_lbl;
 static lv_obj_t *page_lbl;
+static lv_obj_t *job_lbl;
 
 static lv_obj_t *path_canvas;
 static lv_obj_t *head_dot;
@@ -25,6 +27,10 @@ static lv_color_t *path_cbuf = nullptr;
 static int path_w = 0;
 static int path_h = 0;
 static float path_min_x = 0, path_min_y = 0, path_scale = 1;
+
+static path_seg_t *job_path = nullptr;
+static unsigned job_path_len = 0;
+static char job_name[48] = "sample-badge.nc";
 
 static lv_obj_t *axis_rows[3];
 static lv_obj_t *axis_wpos[3];
@@ -70,6 +76,25 @@ static void map_xy(float x, float y, lv_coord_t *px, lv_coord_t *py) {
   *py = (lv_coord_t)(path_h - (y - path_min_y) * path_scale);
 }
 
+static void load_sample_job() {
+  if (!job_path) {
+    job_path = (path_seg_t *)heap_caps_malloc(sizeof(path_seg_t) * GCODE_PATH_MAX_SEGS,
+                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!job_path) {
+      job_path = (path_seg_t *)malloc(sizeof(path_seg_t) * GCODE_PATH_MAX_SEGS);
+    }
+  }
+  if (!job_path) {
+    job_path_len = 0;
+    Serial.println("[gcode] path buffer alloc failed");
+    return;
+  }
+  job_path_len = gcode_parse_toolpath(SAMPLE_JOB_NC, job_path, GCODE_PATH_MAX_SEGS);
+  strncpy(job_name, SAMPLE_JOB_NAME, sizeof(job_name) - 1);
+  job_name[sizeof(job_name) - 1] = '\0';
+  Serial.printf("[gcode] loaded %s → %u segs\n", job_name, job_path_len);
+}
+
 static void draw_toolpath() {
   if (!path_canvas || !path_cbuf) return;
   lv_canvas_fill_bg(path_canvas, lv_color_hex(0x1a1a1a), LV_OPA_COVER);
@@ -86,11 +111,12 @@ static void draw_toolpath() {
   cut_dsc.color = lv_color_hex(0xf59e0b);
   cut_dsc.width = 2;
 
-  for (unsigned i = 1; i < DEMO_TOOLPATH_LEN; i++) {
+  if (!job_path || job_path_len < 2) return;
+  for (unsigned i = 1; i < job_path_len; i++) {
     lv_point_t pts[2];
-    map_xy(DEMO_TOOLPATH[i - 1].x, DEMO_TOOLPATH[i - 1].y, &pts[0].x, &pts[0].y);
-    map_xy(DEMO_TOOLPATH[i].x, DEMO_TOOLPATH[i].y, &pts[1].x, &pts[1].y);
-    lv_canvas_draw_line(path_canvas, pts, 2, DEMO_TOOLPATH[i].cut ? &cut_dsc : &rapid_dsc);
+    map_xy(job_path[i - 1].x, job_path[i - 1].y, &pts[0].x, &pts[0].y);
+    map_xy(job_path[i].x, job_path[i].y, &pts[1].x, &pts[1].y);
+    lv_canvas_draw_line(path_canvas, pts, 2, job_path[i].cut ? &cut_dsc : &rapid_dsc);
   }
 }
 
@@ -163,7 +189,15 @@ static void show_page(int idx) {
   } else {
     lv_obj_add_flag(mpg_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(lv_obj_get_child(other_panel, 0), k_pages[idx]);
+    if (idx == 3 && job_lbl) {
+      char buf[96];
+      snprintf(buf, sizeof(buf), "GCODE\n%s\n%u segments", job_name, job_path_len);
+      lv_label_set_text(job_lbl, buf);
+      lv_label_set_text(lv_obj_get_child(other_panel, 0), "");
+    } else {
+      lv_label_set_text(lv_obj_get_child(other_panel, 0), k_pages[idx]);
+      if (job_lbl) lv_label_set_text(job_lbl, "");
+    }
   }
 }
 
@@ -329,12 +363,20 @@ static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
   path_w = w;
   path_h = h;
 
+  load_sample_job();
+
   float min_x = 1e9f, min_y = 1e9f, max_x = -1e9f, max_y = -1e9f;
-  for (unsigned i = 0; i < DEMO_TOOLPATH_LEN; i++) {
-    if (DEMO_TOOLPATH[i].x < min_x) min_x = DEMO_TOOLPATH[i].x;
-    if (DEMO_TOOLPATH[i].y < min_y) min_y = DEMO_TOOLPATH[i].y;
-    if (DEMO_TOOLPATH[i].x > max_x) max_x = DEMO_TOOLPATH[i].x;
-    if (DEMO_TOOLPATH[i].y > max_y) max_y = DEMO_TOOLPATH[i].y;
+  for (unsigned i = 0; i < job_path_len; i++) {
+    if (job_path[i].x < min_x) min_x = job_path[i].x;
+    if (job_path[i].y < min_y) min_y = job_path[i].y;
+    if (job_path[i].x > max_x) max_x = job_path[i].x;
+    if (job_path[i].y > max_y) max_y = job_path[i].y;
+  }
+  if (job_path_len == 0) {
+    min_x = 0;
+    min_y = 0;
+    max_x = 80;
+    max_y = 50;
   }
   const float pad = 4.0f;
   min_x -= pad;
@@ -343,6 +385,8 @@ static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
   max_y += pad;
   float bw = max_x - min_x;
   float bh = max_y - min_y;
+  if (bw < 1) bw = 1;
+  if (bh < 1) bh = 1;
   float sx = (float)(w - 4) / bw;
   float sy = (float)(h - 4) / bh;
   path_scale = sx < sy ? sx : sy;
@@ -360,7 +404,9 @@ static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
   lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *hint = lv_label_create(frame);
-  lv_label_set_text(hint, "Job preview · gcode");
+  char hint_buf[64];
+  snprintf(hint_buf, sizeof(hint_buf), "Job · %s", job_name);
+  lv_label_set_text(hint, hint_buf);
   lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(hint, lv_color_hex(0x666666), 0);
   lv_obj_set_pos(hint, 6, 4);
@@ -522,6 +568,13 @@ void ui_pendant_create() {
   lv_obj_set_style_text_font(other_lbl, &lv_font_montserrat_20, 0);
   lv_obj_set_style_text_color(other_lbl, lv_color_hex(0xffffff), 0);
   lv_obj_center(other_lbl);
+  job_lbl = lv_label_create(other_panel);
+  lv_obj_set_style_text_font(job_lbl, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(job_lbl, lv_color_hex(0xdddddd), 0);
+  lv_label_set_long_mode(job_lbl, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(job_lbl, UI_H_RES - 40);
+  lv_obj_align(job_lbl, LV_ALIGN_CENTER, 0, 0);
+  lv_label_set_text(job_lbl, "");
   lv_obj_add_flag(other_panel, LV_OBJ_FLAG_HIDDEN);
 
   status_bar = lv_obj_create(scr);

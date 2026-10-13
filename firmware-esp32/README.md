@@ -38,6 +38,7 @@ Use `crowpanel-advance-7-v12` if your board is an older Advance revision (differ
 * SmartPendant-style chrome: header tabs, DRO, step sizes, MPG toggle, soft buttons
 * **Plain ASCII UART ↔ grblHAL** on CrowPanel **UART1-OUT** (status, MPG claim, jog, hold, zero)
 * Offline demo jog/telemetry when no controller answers (status bar shows `Offline · demo`)
+* **G-code toolpath preview** — parses embedded `jobs/sample-badge.nc` (G0/G1/G2/G3, M3/M4/M5, S) into the MPG canvas
 
 ### Wire to grblHAL (SKR / controller)
 
@@ -52,17 +53,20 @@ Use `crowpanel-advance-7-v12` if your board is an older Advance revision (differ
 * Protocol: plain Grbl status (`?` / `<Idle\|WPos:…\|FS:…>`) + realtime `0x8B` MPG toggle — **not** the optional framed `Plugin_mpg_transport` yet
 * Put the S0/S1 function switches in a mode that leaves UART1 free (not mic/I2S on IO19/IO20)
 
-Host parser smoke test (no board needed):
+Host parser smoke tests (no board needed):
 
 ```bash
 g++ -std=c++17 -I include -o /tmp/test_grbl_status \
   test/test_grbl_status.cpp src/grbl_status.cpp && /tmp/test_grbl_status
+g++ -std=c++17 -I include -o /tmp/test_gcode_path \
+  test/test_gcode_path.cpp src/gcode_path.cpp && /tmp/test_gcode_path
 ```
 
 ## Next (not in this slice)
 
+* Live Override / Feed tabs (realtime override bytes)
 * Optional framed MPG transport (`FramedUart` / `Plugin_mpg_transport`)
-* Probe / overrides / program sender screens wired to a real controller
+* Probe / program sender / SD or USB job load on device
 * Case / mounting for the 7″ panel + handwheel
 
 ## Layout lab

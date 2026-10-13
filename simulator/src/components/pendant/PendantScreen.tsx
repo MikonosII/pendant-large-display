@@ -3,17 +3,27 @@
 import { useMemo, useState } from "react";
 import type { PageId, ScreenProfile } from "@/lib/screen-profiles";
 import { PAGES } from "@/lib/screen-profiles";
-import { DEMO_TOOLPATH, toolpathBounds } from "@/lib/demo-toolpath";
+import {
+  parseGcodeToolpath,
+  toolpathBounds,
+  type PathSeg,
+} from "@/lib/gcode-path";
+import { SAMPLE_JOB_NAME, SAMPLE_JOB_NC } from "@/lib/sample-job";
 import { cn } from "@/lib/utils";
 
 type Axis = { name: string; wpos: number; wco: number };
 
-/** Start near the demo toolpath so the laser cursor is in view. */
+/** Start near the sample job so the laser cursor is in view. */
 const INITIAL_AXES: Axis[] = [
   { name: "X", wpos: 40, wco: 0 },
   { name: "Y", wpos: 25, wco: 0 },
   { name: "Z", wpos: 0, wco: 0 },
 ];
+
+const INITIAL_JOB = (() => {
+  const { path, warnings } = parseGcodeToolpath(SAMPLE_JOB_NC);
+  return { name: SAMPLE_JOB_NAME, path, warnings, source: SAMPLE_JOB_NC };
+})();
 
 type Props = {
   profile: ScreenProfile;
@@ -31,6 +41,7 @@ export function PendantScreen({ profile, scale }: Props) {
   const [laserCmd, setLaserCmd] = useState(650);
   const [speedOv, setSpeedOv] = useState(100);
   const [rapidOv] = useState(100);
+  const [job, setJob] = useState(INITIAL_JOB);
 
   const contentH = useMemo(() => {
     const statusH = 32 + 2;
@@ -114,6 +125,8 @@ export function PendantScreen({ profile, scale }: Props) {
               feedOv={feedOverride}
               speedOv={speedOv}
               rapidOv={rapidOv}
+              path={job.path}
+              jobName={job.name}
               roomy={profile.logicalW >= 480}
               onSelectAxis={setActiveAxis}
               onStep={setStep}
@@ -131,7 +144,19 @@ export function PendantScreen({ profile, scale }: Props) {
               onSpeed={setSpeedOv}
             />
           )}
-          {page !== "MPG" && page !== "OVERRIDE" && (
+          {page === "GCODE" && (
+            <GcodeView
+              name={job.name}
+              segCount={job.path.length}
+              warnings={job.warnings}
+              onLoad={(name, nc) => {
+                const { path, warnings } = parseGcodeToolpath(nc);
+                setJob({ name, path, warnings, source: nc });
+              }}
+              onReloadSample={() => setJob(INITIAL_JOB)}
+            />
+          )}
+          {page !== "MPG" && page !== "OVERRIDE" && page !== "GCODE" && (
             <PlaceholderView title={page} profile={profile} />
           )}
         </div>
@@ -210,20 +235,23 @@ function ToolpathPreview({
   x,
   y,
   laserOn,
+  path,
+  jobName,
 }: {
   x: number;
   y: number;
   laserOn: boolean;
+  path: PathSeg[];
+  jobName: string;
 }) {
-  const bounds = toolpathBounds(DEMO_TOOLPATH);
+  const bounds = toolpathBounds(path);
   const vb = `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`;
 
-  // Build cut / rapid polylines as separate path strings
   const cutD: string[] = [];
   const rapidD: string[] = [];
   let pen = "M";
   let lastCut: boolean | null = null;
-  for (const seg of DEMO_TOOLPATH) {
+  for (const seg of path) {
     if (lastCut === null || lastCut !== seg.cut) {
       pen = "M";
       lastCut = seg.cut;
@@ -234,11 +262,10 @@ function ToolpathPreview({
     pen = "L";
   }
 
-  // SVG Y grows down; machine Y grows up — flip for display
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden rounded-sm border border-[#111] bg-[#1a1a1a]">
-      <div className="absolute left-1.5 top-1 z-10 text-[8px] uppercase tracking-wider text-zinc-500">
-        Job preview · gcode
+      <div className="absolute left-1.5 top-1 z-10 max-w-[90%] truncate text-[8px] uppercase tracking-wider text-zinc-500">
+        Job · {jobName}
       </div>
       <svg
         viewBox={vb}
@@ -301,6 +328,8 @@ function MpgView({
   feedOv,
   speedOv,
   rapidOv,
+  path,
+  jobName,
   roomy,
   onSelectAxis,
   onStep,
@@ -316,6 +345,8 @@ function MpgView({
   feedOv: number;
   speedOv: number;
   rapidOv: number;
+  path: PathSeg[];
+  jobName: string;
   roomy: boolean;
   onSelectAxis: (i: number) => void;
   onStep: (s: number) => void;
@@ -328,7 +359,13 @@ function MpgView({
   return (
     <div className="flex h-full flex-col gap-1">
       {roomy && (
-        <ToolpathPreview x={axes[0].wpos} y={axes[1].wpos} laserOn={laserOn} />
+        <ToolpathPreview
+          x={axes[0].wpos}
+          y={axes[1].wpos}
+          laserOn={laserOn}
+          path={path}
+          jobName={jobName}
+        />
       )}
 
       {roomy && (
@@ -568,6 +605,65 @@ function OverrideView({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function GcodeView({
+  name,
+  segCount,
+  warnings,
+  onLoad,
+  onReloadSample,
+}: {
+  name: string;
+  segCount: number;
+  warnings: string[];
+  onLoad: (name: string, nc: string) => void;
+  onReloadSample: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col gap-3 px-2 py-3 text-zinc-200">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-zinc-400">
+          Loaded job
+        </div>
+        <div className="mt-0.5 text-sm font-semibold text-white">{name}</div>
+        <div className="text-[11px] tabular-nums text-zinc-300">
+          {segCount} path segments
+        </div>
+      </div>
+      {warnings.length > 0 && (
+        <div className="text-[10px] leading-snug text-amber-300/90">
+          {warnings.slice(0, 4).join(" · ")}
+        </div>
+      )}
+      <label className="inline-flex cursor-pointer items-center justify-center rounded-sm border border-[#222] bg-[#2f2f2f] px-3 py-2 text-[11px] font-semibold text-white">
+        Load .nc / .gcode
+        <input
+          type="file"
+          accept=".nc,.gcode,.ngc,.txt"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const text = await file.text();
+            onLoad(file.name, text);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      <button
+        type="button"
+        onClick={onReloadSample}
+        className="rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px] font-semibold text-zinc-200"
+      >
+        Reload sample-badge.nc
+      </button>
+      <p className="text-[10px] leading-relaxed text-zinc-400">
+        Preview parses G0/G1/G2/G3 with M3/M4/M5 and modal S. Cut moves (amber)
+        vs rapids (dashed) update the MPG job canvas.
+      </p>
     </div>
   );
 }
