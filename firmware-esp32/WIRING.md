@@ -1,5 +1,7 @@
 # Wiring — CrowPanel ↔ grblHAL ↔ CO2 PSU
 
+**Tunable pin / port numbers:** edit [`include/user_settings.h`](include/user_settings.h) (UART, `LASER_ENABLE_DOUT`, `LASER_FEED_PCT`, `LASER_S_MAX`, handwheel, SD), then rebuild. Do not hunt through `pins_config.h` for those.
+
 Three boxes. The pendant only talks **UART** to the controller. The controller alone drives the laser PSU (**K+** enable + **IN** PWM).
 
 ```text
@@ -46,8 +48,8 @@ Assumes a common LPS where **shorting K+ to GND** arms/enables the beam (your �
 | Laser power | Spindle **PWM** | **IN** | `M3 S…` / `M5` (FEED LASER ON/OFF) |
 | Laser enable | Digital out **Pn** | **K+** (via relay / open-drain to GND) | `M64 Pn` / `M65 Pn` |
 
-Firmware default: `LASER_ENABLE_DOUT=0` → **`M64 P0` / `M65 P0`**.  
-Map grblHAL digital output **0** to the pin that drives the K+ path, or rebuild with `-DLASER_ENABLE_DOUT=n`.
+Firmware default in `user_settings.h`: `LASER_ENABLE_DOUT=0` → **`M64 P0` / `M65 P0`**.  
+Map grblHAL digital output **0** to the pin that drives the K+ path, or change that define and rebuild.
 
 ### K+ enable circuit (required)
 

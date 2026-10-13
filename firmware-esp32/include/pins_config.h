@@ -1,5 +1,9 @@
 #pragma once
 
+// Board-fixed layout for CrowPanel Advance. Tunable wiring / laser / UART /
+// handwheel / SD live in user_settings.h — edit that file, not this one.
+#include "user_settings.h"
+
 // CrowPanel Advance 5″ (ST7262) and 7″ (GW1076-i2) share native 800×480 RGB.
 // Select panel timing via PANEL_ST7262 / PANEL_GW1076 in platformio.ini.
 #define LCD_H_RES 800
@@ -14,77 +18,11 @@
 #define UI_V_RES LCD_V_RES
 #endif
 
-// Touch I2C (shared with STC8H1K28 backlight MCU)
+// Touch I2C (shared with STC8H1K28 backlight MCU) — fixed on Advance boards
 #define TOUCH_SDA 15
 #define TOUCH_SCL 16
 #define TOUCH_I2C_ADDR 0x5D
 #define BL_I2C_ADDR 0x30
-
-// grblHAL link — CrowPanel Advance UART1-OUT (PH2.0-4P)
-// ESP32 TX → controller RX, ESP32 RX ← controller TX (3.3 V TTL)
-#define GRBL_UART_NUM 1
-#define GRBL_UART_TX 20
-#define GRBL_UART_RX 19
-#define GRBL_UART_BAUD 115200
-
-// Handwheel quadrature A/B (3.3 V TTL, internal pull-ups enabled).
-// CrowPanel Advance has almost no free GPIO after the RGB panel + UART1.
-// Leave −1 until wired. Prefer I2C_MPG_ENABLE (PCF8574) when using the TF card
-// — IO4/IO5/IO6 are claimed by SD in TF DIP mode.
-// Direct GPIO reclaim when TF/speaker are unused: IO4 = A, IO5 = B.
-#ifndef HANDWHEEL_A_GPIO
-#define HANDWHEEL_A_GPIO -1
-#endif
-#ifndef HANDWHEEL_B_GPIO
-#define HANDWHEEL_B_GPIO -1
-#endif
-// Counts per detent after 4× decode; stock pendant is ~100 PPR.
-#ifndef HANDWHEEL_PPR
-#define HANDWHEEL_PPR 100
-#endif
-
-// Optional PCF8574 on the touch I2C bus (SDA15/SCL16) for wheel + axis buttons.
-#ifndef I2C_MPG_ENABLE
-#define I2C_MPG_ENABLE 0
-#endif
-#ifndef I2C_MPG_ADDR
-#define I2C_MPG_ADDR 0x20
-#endif
-
-// CrowPanel Advance TF / microSD (SPI). Shares IO4–IO6 with speaker I2S —
-// set rear DIP switches to a TF-card mode before mounting.
-#ifndef JOB_STORE_SD
-#define JOB_STORE_SD 1
-#endif
-#ifndef SD_SPI_MOSI
-#define SD_SPI_MOSI 6
-#endif
-#ifndef SD_SPI_MISO
-#define SD_SPI_MISO 4
-#endif
-#ifndef SD_SPI_SCK
-#define SD_SPI_SCK 5
-#endif
-// Many Advance boards hard-tie SD CS to 3.3 V (−1). Library still needs a
-// GPIO number; SD_SPI_DUMMY_CS is driven high and is not the card's CS.
-#ifndef SD_SPI_CS
-#define SD_SPI_CS -1
-#endif
-#ifndef SD_SPI_DUMMY_CS
-#define SD_SPI_DUMMY_CS 8
-#endif
-
-// Laser PSU K+ enable — grblHAL digital output index for M64/M65.
-// Wire that aux (relay/open-drain) so ACTIVE connects PSU K+ to GND (beam arm).
-// Inactive / M65 opens the path (software inhibit). Map the pin in your
-// grblHAL board config to the matching digital out number.
-#ifndef LASER_ENABLE_DOUT
-#define LASER_ENABLE_DOUT 0
-#endif
-// Default FEED-tab laser power in percent (0.1% steps). Converted to S via $30.
-#ifndef LASER_FEED_PCT
-#define LASER_FEED_PCT 5.0f
-#endif
 
 // Chrome metrics (match Application/ScreenConfig.h profile 2)
 #define SCREEN_HEADER_H 56

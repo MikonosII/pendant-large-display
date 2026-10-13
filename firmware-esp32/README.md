@@ -54,6 +54,23 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 
 LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. The pendant preview is from NC loaded/parsed on the pendant (embedded sample, LittleFS/SD `/jobs`, or a file in the lab). Use **START** after the controller has the job (or is in Hold) to cycle-start from the device.
 
+### User settings (edit before flash)
+
+All wiring / laser / UART / handwheel / SD knobs live in one file:
+
+**[`include/user_settings.h`](include/user_settings.h)**
+
+| Define | Default | Meaning |
+|--------|---------|---------|
+| `GRBL_UART_TX` / `RX` / `BAUD` | 20 / 19 / 115200 | CrowPanel UART1-OUT → controller |
+| `LASER_ENABLE_DOUT` | `0` | grblHAL dout `n` for K+ via `M64 Pn` / `M65 Pn` |
+| `LASER_FEED_PCT` | `5.0` | FEED tab default power (%) |
+| `LASER_S_MAX` | `1000` | Matches grblHAL `$30` (100% → this S) |
+| `HANDWHEEL_*` / `I2C_MPG_*` | off | Optional wheel GPIO or PCF8574 |
+| `JOB_STORE_SD` / `SD_SPI_*` | on / IO4–6 | TF card job store |
+
+Full pin map: [`WIRING.md`](WIRING.md).
+
 ### Wire to grblHAL (SKR / controller)
 
 | CrowPanel UART1-OUT | Controller |
@@ -63,7 +80,7 @@ LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its o
 | GND | GND |
 | 3.3 V logic only | — |
 
-* Baud **115200** 8N1 (same as stock SmartPendant default)
+* Baud **115200** 8N1 (override in `user_settings.h`)
 * Protocol: plain Grbl status by default (`?` / `<Idle\|WPos:…\|FS:…>`) + realtime `0x8B` MPG toggle
 * Optional **framed** transport (`Plugin_mpg_transport`): toggle in **SETTINGS → UART TRANSPORT**, or build with `-DGRBL_TRANSPORT_FRAMED=1`. Both ends must match.
 * Put the S0/S1 function switches in a mode that leaves UART1 free (not mic/I2S on IO19/IO20)
