@@ -123,12 +123,7 @@ export function PendantScreen({ profile }: Props) {
   }, [profile]);
 
   const statusBar = (
-    <div
-      className={cn(
-        "flex h-[40px] items-stretch bg-[#555]",
-        roomy ? "border-b border-black/40" : "border-t border-black/40"
-      )}
-    >
+    <div className="flex h-[40px] items-stretch border-b border-black/40 bg-[#555]">
       <div className="flex min-w-0 flex-1 flex-col justify-center px-2 py-1">
         <div className="text-[13px] font-bold leading-none text-white">Idle</div>
         <div className="mt-0.5 truncate text-[9px] text-zinc-200">
@@ -213,7 +208,7 @@ export function PendantScreen({ profile }: Props) {
           ))}
         </div>
 
-        {roomy && statusBar}
+        {statusBar}
 
         <div
           className="relative overflow-hidden bg-[#404040] px-1.5 py-1"
@@ -407,8 +402,6 @@ export function PendantScreen({ profile }: Props) {
               <PlaceholderView title={page} profile={profile} />
             )}
         </div>
-
-        {!roomy && statusBar}
 
         <div
           className="flex gap-px bg-black"
@@ -820,7 +813,7 @@ function MpgView({
     <div
       className={cn(
         "flex h-full flex-col",
-        roomy ? "gap-1" : "gap-0.5 overflow-hidden"
+        roomy ? "gap-1" : "gap-1 overflow-hidden"
       )}
     >
       {roomy && (
@@ -841,8 +834,9 @@ function MpgView({
 
       <div
         className={cn(
-          "shrink-0",
-          roomy ? "grid grid-cols-3 gap-1" : "flex flex-col gap-0.5"
+          roomy
+            ? "grid shrink-0 grid-cols-3 gap-1"
+            : "flex min-h-0 flex-[3] flex-col gap-1"
         )}
       >
         {axes.map((axis, i) => (
@@ -852,7 +846,7 @@ function MpgView({
             onClick={() => onSelectAxis(i)}
             className={cn(
               "flex items-center gap-1.5 rounded-sm border px-1.5 text-left transition-colors",
-              roomy ? "py-2.5" : "py-1.5",
+              roomy ? "py-2.5" : "min-h-0 flex-1",
               i === activeAxis
                 ? "border-amber-400 bg-[#1f1f1f]"
                 : "border-[#222] bg-[#333]"
@@ -861,7 +855,7 @@ function MpgView({
             <span
               className={cn(
                 "shrink-0 font-bold text-amber-300",
-                roomy ? "text-base" : "text-sm"
+                roomy ? "text-base" : "text-base"
               )}
             >
               {axis.name}
@@ -870,7 +864,7 @@ function MpgView({
               <div
                 className={cn(
                   "tabular-nums text-white",
-                  roomy ? "text-base" : "text-base"
+                  roomy ? "text-base" : "text-lg"
                 )}
               >
                 {axis.wpos.toFixed(3)}
@@ -919,7 +913,12 @@ function MpgView({
       )}
 
       {/* Bottom chrome: Advance adds LASER TEST; all profiles get 2×4 macros + steps */}
-      <div className="mt-auto shrink-0 space-y-1">
+      <div
+        className={cn(
+          "flex flex-col",
+          roomy ? "mt-auto shrink-0 space-y-1" : "min-h-0 flex-[4] gap-1"
+        )}
+      >
         {roomy && (
           <button
             type="button"
@@ -935,7 +934,14 @@ function MpgView({
           </button>
         )}
 
-        <div className={cn("grid grid-cols-4", roomy ? "gap-1.5" : "gap-1")}>
+        <div
+          className={cn(
+            "grid grid-cols-4",
+            roomy
+              ? "gap-1.5"
+              : "h-full min-h-0 flex-[2] grid-rows-2 gap-1"
+          )}
+        >
           {macros.map((m, idx) => {
             const teaching = teachSlot === idx;
             const taught = !!m.gcode;
@@ -945,7 +951,9 @@ function MpgView({
                 type="button"
                 className={cn(
                   "rounded-sm border font-semibold text-zinc-100 select-none",
-                  roomy ? "py-3.5 text-sm" : "py-1.5 text-[10px]",
+                  roomy
+                    ? "py-3.5 text-sm"
+                    : "flex h-full min-h-0 items-center justify-center text-xs",
                   teaching
                     ? "border-amber-400 bg-amber-700"
                     : taught
@@ -997,10 +1005,15 @@ function MpgView({
             );
           })}
         </div>
-        <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
+        <div className="shrink-0 text-[9px] uppercase tracking-wider text-zinc-300">
           Step (mm)
         </div>
-        <div className={cn("grid grid-cols-4", roomy ? "gap-1.5" : "gap-1")}>
+        <div
+          className={cn(
+            "grid grid-cols-4",
+            roomy ? "gap-1.5" : "h-full min-h-0 flex-1 grid-rows-1 gap-1"
+          )}
+        >
           {steps.map((s) => (
             <button
               key={s}
@@ -1008,7 +1021,9 @@ function MpgView({
               onClick={() => onStep(s)}
               className={cn(
                 "rounded-sm border font-semibold",
-                roomy ? "py-3.5 text-sm" : "py-1.5 text-[11px]",
+                roomy
+                  ? "py-3.5 text-sm"
+                  : "flex h-full min-h-0 items-center justify-center text-xs",
                 step === s
                   ? "border-sky-400 bg-sky-700 text-white"
                   : "border-[#222] bg-[#2f2f2f] text-zinc-200"
