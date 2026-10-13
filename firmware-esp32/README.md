@@ -47,15 +47,14 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 * **Soft macros** — 8 buttons (2×4) from **`/macros.cfg`** on SD (preferred) or LittleFS (`Name = g-code`). Edit names in the file, reboot — no rebuild.
 * **GCODE toolpath preview** — path canvas for jobs you load/RUN from the pendant (not from LightBurn)
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
-* **MPG START** — green confirm button sends cycle start (`~`) so a job already on the controller can be released from the pendant
-* **LASER TEST** (MPG) — toggle K+ enable only (`M64`/`M65`). Lights when armed.
+* **LASER TEST** (MPG) — toggle K+ enable only (`M64`/`M65`). Lights when armed. No MPG START — LightBurn owns job start/stop.
 * **LASER ON / OFF** (FEED tab) — power in **percent (0.1% steps)** → `M3 S` via `$30`; ON = `M64` + `M3`; OFF = `M65` + `M5`. Dout = `LASER_ENABLE_DOUT`; default = `LASER_FEED_PCT` (5.0%).
 * **PROBE** — axis select, G38.2/G38.3 toward WPos ± travel, live `Pn:P` contact, last `[PRB:]` machine coords, Zero WPos
 * **GCODE / jobs** — list + load embedded sample, LittleFS `/jobs`, and SD/TF `/jobs` into the toolpath preview
 * **Program sender** — GCODE **RUN / HOLD / STOP** streams the loaded NC to grblHAL one line per `ok` (memory if it fits, else line-by-line from FS). Offline demo paces without a controller.
 * **I2C MPG expander** (optional) — PCF8574 on SDA15/SCL16 for handwheel A/B + axis/step buttons when GPIO is scarce
 
-LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. The pendant preview is from NC loaded/parsed on the pendant (embedded sample, LittleFS/SD `/jobs`, or a file in the lab). Use **START** after the controller has the job (or is in Hold) to cycle-start from the device.
+LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. Start/stop the burn from LightBurn. The pendant preview (if used) is from NC loaded on the pendant (embedded sample, LittleFS/SD `/jobs`, or a file in the lab).
 
 ### Runtime settings (edit the file — no rebuild)
 

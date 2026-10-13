@@ -90,7 +90,6 @@ static lv_obj_t *axis_wpos[3];
 static lv_obj_t *axis_mpos[3];
 static lv_obj_t *step_btns[4];
 static lv_obj_t *soft_btns[3];
-static lv_obj_t *start_btn;
 static lv_obj_t *laser_test_btn;
 static lv_obj_t *laser_test_lbl;
 static lv_obj_t *macro_btns[MACRO_MAX];
@@ -431,16 +430,6 @@ static void refresh_power_feed_ui() {
     if (pf_axis_btns[i]) style_chrome_btn(pf_axis_btns[i], i == active_axis);
   }
   refresh_laser_enable_ui();
-}
-
-static void on_start(lv_event_t *e) {
-  (void)e;
-  if (grbl_link_online()) {
-    grbl_link_cycle_start();
-    Serial.println("[grbl] cycle start");
-  } else {
-    lv_label_set_text(state_lbl, "Start  ·  demo (no link)");
-  }
 }
 
 static void refresh_laser_enable_ui() {
@@ -1333,7 +1322,7 @@ void ui_pendant_create() {
   const int step_y = (content_h - 8) - step_h;
   const int macro_block_h = macro_rows * macro_h + (macro_rows - 1) * macro_gap;
   const int macro_y0 = step_y - macro_block_h - 4;
-  const int map_h_px = 240;
+  const int map_h_px = 280;
   setup_live_map(mpg_panel, 0, UI_H_RES - 12, map_h_px);
 
   // Denser 3-column DRO under the live map
@@ -1390,24 +1379,9 @@ void ui_pendant_create() {
   lv_obj_add_event_cb(laser_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)1);
   make_telemetry_cell(tele, "OV", &ov_lbl);
 
-  // Confirm / run — cycle start after job is loaded on the controller
-  const int start_y = tele_y + 70;
-  start_btn = lv_btn_create(mpg_panel);
-  lv_obj_set_size(start_btn, UI_H_RES - 12, 48);
-  lv_obj_set_pos(start_btn, 0, start_y);
-  lv_obj_set_style_radius(start_btn, 2, 0);
-  lv_obj_set_style_border_width(start_btn, 1, 0);
-  lv_obj_set_style_border_color(start_btn, lv_color_hex(0x065f46), 0);
-  lv_obj_set_style_bg_color(start_btn, lv_color_hex(0x059669), 0);
-  lv_obj_set_style_text_color(start_btn, lv_color_hex(0xffffff), 0);
-  lv_obj_t *start_lbl = lv_label_create(start_btn);
-  lv_label_set_text(start_lbl, "START");
-  lv_obj_set_style_text_font(start_lbl, &lv_font_montserrat_20, 0);
-  lv_obj_center(start_lbl);
-  lv_obj_add_event_cb(start_btn, on_start, LV_EVENT_CLICKED, NULL);
-
-  // Laser TEST toggle — K+ enable only (PWM/power lives on FEED tab)
-  const int laser_y = start_y + 52;
+  // Laser TEST toggle — K+ enable only (PWM/power lives on FEED tab).
+  // No MPG START: LightBurn owns cycle start / job run on its own link.
+  const int laser_y = tele_y + 70;
   laser_test_btn = lv_btn_create(mpg_panel);
   lv_obj_set_size(laser_test_btn, UI_H_RES - 12, 44);
   lv_obj_set_pos(laser_test_btn, 0, laser_y);

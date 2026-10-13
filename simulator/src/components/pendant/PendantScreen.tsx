@@ -74,7 +74,6 @@ export function PendantScreen({ profile }: Props) {
   const [rapidOv, setRapidOv] = useState(100);
   const [powerFeed, setPowerFeed] = useState(300);
   const [job, setJob] = useState(INITIAL_JOB);
-  const [startFlash, setStartFlash] = useState(false);
   const [framedTransport, setFramedTransport] = useState(false);
   const [probeFeed, setProbeFeed] = useState(100);
   const [probeTravel] = useState(20);
@@ -225,12 +224,6 @@ export function PendantScreen({ profile }: Props) {
               onLaser={(d) =>
                 setLaserCmd((s) => Math.min(1000, Math.max(0, s + d)))
               }
-              onStart={() => {
-                // Lab stand-in for realtime '~' cycle start
-                setStartFlash(true);
-                window.setTimeout(() => setStartFlash(false), 800);
-              }}
-              startFlash={startFlash}
               laserKOn={laserKOn}
               onLaserTest={() => setLaserKOn((v) => !v)}
               macros={macros}
@@ -576,7 +569,7 @@ function MachineMap({
   const hy = Math.min(bedY, Math.max(0, y));
 
   return (
-    <div className="relative h-[240px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
+    <div className="relative h-[280px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
       <div className="absolute left-1.5 top-1 z-10 text-[10px] text-zinc-400">
         WPos map · {bedX}×{bedY} mm
       </div>
@@ -756,8 +749,6 @@ function MpgView({
   onStep,
   onZero,
   onLaser,
-  onStart,
-  startFlash,
   laserKOn,
   onLaserTest,
   macros,
@@ -781,8 +772,6 @@ function MpgView({
   onStep: (s: number) => void;
   onZero: (i: number) => void;
   onLaser: (d: number) => void;
-  onStart: () => void;
-  startFlash: boolean;
   laserKOn: boolean;
   onLaserTest: () => void;
   macros: MacroSlot[];
@@ -890,20 +879,9 @@ function MpgView({
 
       <button
         type="button"
-        onClick={onStart}
-        className={cn(
-          "mt-0.5 w-full rounded-sm border border-emerald-800 py-2.5 text-sm font-bold tracking-wide text-white transition-colors",
-          startFlash ? "bg-emerald-400 text-emerald-950" : "bg-emerald-600"
-        )}
-      >
-        START
-      </button>
-
-      <button
-        type="button"
         onClick={onLaserTest}
         className={cn(
-          "w-full rounded-sm border py-2.5 text-[11px] font-bold tracking-wide text-white transition-colors",
+          "mt-0.5 w-full rounded-sm border py-2.5 text-[11px] font-bold tracking-wide text-white transition-colors",
           laserKOn
             ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
             : "border-orange-950 bg-orange-950/80"
