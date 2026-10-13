@@ -47,7 +47,7 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
 * **MPG START** — green confirm button sends cycle start (`~`) so a job already on the controller can be released from the pendant
 * **LASER TEST** (MPG) — toggle K+ enable only (`M64`/`M65`). Lights when armed.
-* **LASER ON / OFF** (FEED tab) — power `S` setting + ON = `M64` + `M3 S…`; OFF = `M65` + `M5`. Dout port = `LASER_ENABLE_DOUT` (default `0`); default S = `LASER_FEED_S`.
+* **LASER ON / OFF** (FEED tab) — power in **percent (0.1% steps)** → `M3 S` via `$30`; ON = `M64` + `M3`; OFF = `M65` + `M5`. Dout = `LASER_ENABLE_DOUT`; default = `LASER_FEED_PCT` (5.0%).
 * **PROBE** — axis select, G38.2/G38.3 toward WPos ± travel, live `Pn:P` contact, last `[PRB:]` machine coords, Zero WPos
 * **GCODE / jobs** — list + load embedded sample, LittleFS `/jobs`, and SD/TF `/jobs` into the toolpath preview
 * **I2C MPG expander** (optional) — PCF8574 on SDA15/SCL16 for handwheel A/B + axis/step buttons when GPIO is scarce

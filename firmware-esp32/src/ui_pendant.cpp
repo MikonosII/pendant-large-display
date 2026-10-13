@@ -78,7 +78,7 @@ static lv_obj_t *feed_laser_on_btn;
 static lv_obj_t *feed_laser_off_btn;
 static lv_obj_t *pf_laser_val;
 static bool laser_k_on = false;  // PSU K+ enable latched
-static float laser_feed_s = (float)LASER_FEED_S;  // PWM S for FEED LASER ON
+static float laser_feed_pct = LASER_FEED_PCT;  // percent, 0.1% steps → S via $30
 
 static lv_obj_t *feed_lbl;
 static lv_obj_t *laser_cmd_lbl;
@@ -363,23 +363,31 @@ static void refresh_laser_enable_ui() {
   }
   if (pf_laser_val) {
     char buf[24];
-    snprintf(buf, sizeof(buf), "%0.0f", laser_feed_s);
+    snprintf(buf, sizeof(buf), "%0.1f%%", laser_feed_pct);
     lv_label_set_text(pf_laser_val, buf);
   }
+}
+
+static float laser_pct_to_s(float pct) {
+  // $30 scale: S = pct% × laser_s_max / 100 (tenths → whole S when max=1000)
+  float s = pct * laser_s_max / 100.0f;
+  if (s < 0) s = 0;
+  if (s > laser_s_max) s = laser_s_max;
+  return s;
 }
 
 static void set_laser_k(bool on, bool with_pwm) {
   if (on) {
     if (grbl_link_online()) {
-      bool ok = with_pwm ? grbl_link_laser_on(laser_feed_s) : grbl_link_laser_enable();
+      float s = laser_pct_to_s(laser_feed_pct);
+      bool ok = with_pwm ? grbl_link_laser_on(s) : grbl_link_laser_enable();
       if (!ok) {
         lv_label_set_text(state_lbl, "Laser blocked (Idle+MPG?)");
         return;
       }
-      char buf[56];
+      char buf[64];
       if (with_pwm) {
-        snprintf(buf, sizeof(buf), "Laser ON  ·  K+ M64P%d  S%.0f", (int)LASER_ENABLE_DOUT,
-                 laser_feed_s);
+        snprintf(buf, sizeof(buf), "Laser ON  ·  K+  %0.1f%%  S%.0f", laser_feed_pct, s);
       } else {
         snprintf(buf, sizeof(buf), "Laser TEST ON  ·  K+ M64P%d", (int)LASER_ENABLE_DOUT);
       }
@@ -410,7 +418,7 @@ static void on_laser_test(lv_event_t *e) {
 
 static void on_feed_laser_on(lv_event_t *e) {
   (void)e;
-  set_laser_k(true, true);  // K+ + M3 S from FEED power
+  set_laser_k(true, true);  // K+ + M3 S from FEED %
 }
 
 static void on_feed_laser_off(lv_event_t *e) {
@@ -419,10 +427,13 @@ static void on_feed_laser_off(lv_event_t *e) {
 }
 
 static void on_pf_laser_bump(lv_event_t *e) {
-  int d = (int)(intptr_t)lv_event_get_user_data(e);
-  laser_feed_s += (float)d;
-  if (laser_feed_s < 1) laser_feed_s = 1;
-  if (laser_feed_s > 1000) laser_feed_s = 1000;
+  // user_data is tenths of a percent (e.g. −1 = −0.1%, +10 = +1.0%)
+  int tenths = (int)(intptr_t)lv_event_get_user_data(e);
+  laser_feed_pct += (float)tenths / 10.0f;
+  if (laser_feed_pct < 0.1f) laser_feed_pct = 0.1f;
+  if (laser_feed_pct > 100.0f) laser_feed_pct = 100.0f;
+  // Snap to 0.1%
+  laser_feed_pct = (float)((int)(laser_feed_pct * 10.0f + 0.5f)) / 10.0f;
   refresh_laser_enable_ui();
 }
 
@@ -1259,9 +1270,9 @@ void ui_pendant_create() {
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
     lv_obj_set_pos(hint, 4, 270);
 
-    // Laser power (PWM S) + ON/OFF — K+ enable with M3 S from this setting
+    // Laser power (%) + ON/OFF — K+ enable with M3 S from percent × $30
     lv_obj_t *lc = lv_label_create(feed_panel);
-    lv_label_set_text(lc, "LASER POWER  S  ($30 scale)");
+    lv_label_set_text(lc, "LASER POWER  %");
     lv_obj_set_style_text_font(lc, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lc, lv_color_hex(0x888888), 0);
     lv_obj_set_pos(lc, 4, 320);
@@ -1270,8 +1281,9 @@ void ui_pendant_create() {
     lv_obj_set_style_text_color(pf_laser_val, lv_color_hex(0xffffff), 0);
     lv_obj_set_pos(pf_laser_val, 4, 340);
 
-    const int lbumps[] = {-50, -10, 10, 50};
-    const char *llabs[] = {"−50", "−10", "+10", "+50"};
+    // Bumps in tenths of a percent: −1.0, −0.1, +0.1, +1.0
+    const int lbumps[] = {-10, -1, 1, 10};
+    const char *llabs[] = {"−1%", "−0.1", "+0.1", "+1%"};
     for (int i = 0; i < 4; i++) {
       lv_obj_t *b = lv_btn_create(feed_panel);
       lv_obj_set_size(b, bbw - 2, 40);
@@ -1279,6 +1291,7 @@ void ui_pendant_create() {
       style_chrome_btn(b, false);
       lv_obj_t *l = lv_label_create(b);
       lv_label_set_text(l, llabs[i]);
+      lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
       lv_obj_center(l);
       lv_obj_add_event_cb(b, on_pf_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)lbumps[i]);
     }
@@ -1308,7 +1321,7 @@ void ui_pendant_create() {
     lv_obj_t *lh = lv_label_create(feed_panel);
     lv_label_set_long_mode(lh, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lh, UI_H_RES - 28);
-    lv_label_set_text(lh, "ON = K+ enable (M64) + M3 S. OFF = M65 + M5.\nMPG LASER TEST toggles K+ only.");
+    lv_label_set_text(lh, "ON = K+ (M64) + M3 from %. OFF = M65 + M5.\nMPG LASER TEST toggles K+ only.");
     lv_obj_set_style_text_font(lh, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lh, lv_color_hex(0x888888), 0);
     lv_obj_set_pos(lh, 4, 500);

@@ -39,7 +39,7 @@ export function PendantScreen({ profile }: Props) {
   const [feedRate, setFeedRate] = useState(1200);
   const [laserCmd, setLaserCmd] = useState(650);
   const [laserKOn, setLaserKOn] = useState(false);
-  const [laserFeedS, setLaserFeedS] = useState(50);
+  const [laserFeedPct, setLaserFeedPct] = useState(5.0);
   const [speedOv, setSpeedOv] = useState(100);
   const [rapidOv, setRapidOv] = useState(100);
   const [powerFeed, setPowerFeed] = useState(300);
@@ -196,11 +196,11 @@ export function PendantScreen({ profile }: Props) {
               axes={axes}
               activeAxis={activeAxis}
               powerFeed={powerFeed}
-              laserFeedS={laserFeedS}
+              laserFeedPct={laserFeedPct}
               laserKOn={laserKOn}
               onSelectAxis={setActiveAxis}
               onFeed={setPowerFeed}
-              onLaserS={setLaserFeedS}
+              onLaserPct={setLaserFeedPct}
               onLaserOn={() => setLaserKOn(true)}
               onLaserOff={() => setLaserKOn(false)}
               onJog={(dir) => {
@@ -949,11 +949,11 @@ function FeedView({
   axes,
   activeAxis,
   powerFeed,
-  laserFeedS,
+  laserFeedPct,
   laserKOn,
   onSelectAxis,
   onFeed,
-  onLaserS,
+  onLaserPct,
   onLaserOn,
   onLaserOff,
   onJog,
@@ -961,11 +961,11 @@ function FeedView({
   axes: Axis[];
   activeAxis: number;
   powerFeed: number;
-  laserFeedS: number;
+  laserFeedPct: number;
   laserKOn: boolean;
   onSelectAxis: (i: number) => void;
   onFeed: (n: number) => void;
-  onLaserS: (n: number) => void;
+  onLaserPct: (n: number) => void;
   onLaserOn: () => void;
   onLaserOff: () => void;
   onJog: (dir: 1 | -1) => void;
@@ -1036,23 +1036,30 @@ function FeedView({
       </div>
 
       <div className="border-t border-[#333] pt-2">
-        <div className="text-[9px] uppercase text-zinc-500">
-          Laser power S ($30 scale)
-        </div>
+        <div className="text-[9px] uppercase text-zinc-500">Laser power %</div>
         <div className="text-3xl font-bold tabular-nums text-white">
-          {laserFeedS}
+          {laserFeedPct.toFixed(1)}%
         </div>
         <div className="mt-1 grid grid-cols-4 gap-1">
-          {[-50, -10, 10, 50].map((d) => (
+          {[
+            { d: -1, label: "−1%" },
+            { d: -0.1, label: "−0.1" },
+            { d: 0.1, label: "+0.1" },
+            { d: 1, label: "+1%" },
+          ].map(({ d, label }) => (
             <button
-              key={d}
+              key={label}
               type="button"
               onClick={() =>
-                onLaserS(Math.min(1000, Math.max(1, laserFeedS + d)))
+                onLaserPct(
+                  Math.round(
+                    Math.min(100, Math.max(0.1, laserFeedPct + d)) * 10
+                  ) / 10
+                )
               }
               className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
             >
-              {d > 0 ? `+${d}` : d}
+              {label}
             </button>
           ))}
         </div>
@@ -1083,8 +1090,8 @@ function FeedView({
           </button>
         </div>
         <p className="mt-1 text-[9px] leading-snug text-zinc-500">
-          ON = K+ (M64) + M3 S. OFF = M65 + M5. MPG LASER TEST toggles K+
-          only.
+          ON = K+ (M64) + M3 from %. OFF = M65 + M5. MPG LASER TEST toggles
+          K+ only.
         </p>
       </div>
     </div>

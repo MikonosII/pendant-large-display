@@ -81,9 +81,9 @@
 #ifndef LASER_ENABLE_DOUT
 #define LASER_ENABLE_DOUT 0
 #endif
-// Default PWM S for FEED-tab LASER ON (grblHAL $30 scale).
-#ifndef LASER_FEED_S
-#define LASER_FEED_S 50
+// Default FEED-tab laser power in percent (0.1% steps). Converted to S via $30.
+#ifndef LASER_FEED_PCT
+#define LASER_FEED_PCT 5.0f
 #endif
 
 // Chrome metrics (match Application/ScreenConfig.h profile 2)
