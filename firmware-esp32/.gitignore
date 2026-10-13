@@ -6,3 +6,8 @@
 *.bin
 *.elf
 *.map
+managed_components/
+.dummy/
+dependencies.lock
+sdkconfig.defaults
+sdkconfig.defaults.esp32s3
