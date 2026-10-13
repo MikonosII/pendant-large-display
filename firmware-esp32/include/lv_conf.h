@@ -47,6 +47,7 @@
 #define LV_USE_CHART 0
 #define LV_USE_IMG 1
 #define LV_USE_LINE 1
+#define LV_USE_CANVAS 1
 #define LV_USE_TABLE 0
 #define LV_USE_CHECKBOX 1
 #define LV_USE_DROPDOWN 1

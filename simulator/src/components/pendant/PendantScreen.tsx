@@ -3,14 +3,16 @@
 import { useMemo, useState } from "react";
 import type { PageId, ScreenProfile } from "@/lib/screen-profiles";
 import { PAGES } from "@/lib/screen-profiles";
+import { DEMO_TOOLPATH, toolpathBounds } from "@/lib/demo-toolpath";
 import { cn } from "@/lib/utils";
 
 type Axis = { name: string; wpos: number; wco: number };
 
+/** Start near the demo toolpath so the laser cursor is in view. */
 const INITIAL_AXES: Axis[] = [
-  { name: "X", wpos: 12.34, wco: 10 },
-  { name: "Y", wpos: -45.678, wco: 20 },
-  { name: "Z", wpos: 3.2, wco: 0 },
+  { name: "X", wpos: 40, wco: 0 },
+  { name: "Y", wpos: 25, wco: 0 },
+  { name: "Z", wpos: 0, wco: 0 },
 ];
 
 type Props = {
@@ -204,6 +206,91 @@ function SoftBtn({
   );
 }
 
+function ToolpathPreview({
+  x,
+  y,
+  laserOn,
+}: {
+  x: number;
+  y: number;
+  laserOn: boolean;
+}) {
+  const bounds = toolpathBounds(DEMO_TOOLPATH);
+  const vb = `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`;
+
+  // Build cut / rapid polylines as separate path strings
+  const cutD: string[] = [];
+  const rapidD: string[] = [];
+  let pen = "M";
+  let lastCut: boolean | null = null;
+  for (const seg of DEMO_TOOLPATH) {
+    if (lastCut === null || lastCut !== seg.cut) {
+      pen = "M";
+      lastCut = seg.cut;
+    }
+    const cmd = `${pen}${seg.x} ${seg.y}`;
+    if (seg.cut) cutD.push(cmd);
+    else rapidD.push(cmd);
+    pen = "L";
+  }
+
+  // SVG Y grows down; machine Y grows up — flip for display
+  return (
+    <div className="relative min-h-0 flex-1 overflow-hidden rounded-sm border border-[#111] bg-[#1a1a1a]">
+      <div className="absolute left-1.5 top-1 z-10 text-[8px] uppercase tracking-wider text-zinc-500">
+        Job preview · gcode
+      </div>
+      <svg
+        viewBox={vb}
+        className="h-full w-full"
+        preserveAspectRatio="xMidYMid meet"
+        style={{ transform: "scaleY(-1)" }}
+      >
+        <path
+          d={rapidD.join(" ")}
+          fill="none"
+          stroke="#555"
+          strokeWidth={0.6}
+          strokeDasharray="2 1.5"
+        />
+        <path
+          d={cutD.join(" ")}
+          fill="none"
+          stroke="#f59e0b"
+          strokeWidth={0.9}
+        />
+        {/* Laser head */}
+        <g>
+          <circle
+            cx={x}
+            cy={y}
+            r={2.2}
+            fill={laserOn ? "#ef4444" : "#38bdf8"}
+            stroke="#fff"
+            strokeWidth={0.4}
+          />
+          <line
+            x1={x - 4}
+            y1={y}
+            x2={x + 4}
+            y2={y}
+            stroke="#fff"
+            strokeWidth={0.35}
+          />
+          <line
+            x1={x}
+            y1={y - 4}
+            x2={x}
+            y2={y + 4}
+            stroke="#fff"
+            strokeWidth={0.35}
+          />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 function MpgView({
   axes,
   activeAxis,
@@ -236,73 +323,80 @@ function MpgView({
   onLaser: (d: number) => void;
 }) {
   const steps = [0.01, 0.1, 1, 10];
+  const laserOn = laserCmd > 0;
 
   return (
     <div className="flex h-full flex-col gap-1">
       {roomy && (
-        <div className="px-10 text-[9px] uppercase tracking-wider text-zinc-400">
-          WPos&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MPos
+        <ToolpathPreview x={axes[0].wpos} y={axes[1].wpos} laserOn={laserOn} />
+      )}
+
+      {roomy && (
+        <div className="px-1 text-[9px] uppercase tracking-wider text-zinc-400">
+          WPos / MPos
         </div>
       )}
 
-      {axes.map((axis, i) => (
-        <button
-          key={axis.name}
-          type="button"
-          onClick={() => onSelectAxis(i)}
-          className={cn(
-            "flex items-center gap-2 rounded-sm border px-2 text-left transition-colors",
-            roomy ? "py-2.5" : "py-2",
-            i === activeAxis
-              ? "border-amber-400 bg-[#1f1f1f]"
-              : "border-[#222] bg-[#333]"
-          )}
-        >
-          <span
+      <div className={cn(roomy ? "grid grid-cols-3 gap-1" : "flex flex-col gap-1")}>
+        {axes.map((axis, i) => (
+          <button
+            key={axis.name}
+            type="button"
+            onClick={() => onSelectAxis(i)}
             className={cn(
-              "w-6 shrink-0 font-bold text-amber-300",
-              roomy ? "text-xl" : "text-base"
+              "flex items-center gap-1.5 rounded-sm border px-1.5 text-left transition-colors",
+              roomy ? "py-1.5" : "py-2",
+              i === activeAxis
+                ? "border-amber-400 bg-[#1f1f1f]"
+                : "border-[#222] bg-[#333]"
             )}
           >
-            {axis.name}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div
+            <span
               className={cn(
-                "tabular-nums text-white",
-                roomy ? "text-xl" : "text-lg"
+                "shrink-0 font-bold text-amber-300",
+                roomy ? "text-sm" : "text-base"
               )}
             >
-              {axis.wpos.toFixed(3)}
-            </div>
-            {roomy && (
-              <div className="text-[11px] tabular-nums text-sky-300/90">
-                M {(axis.wpos + axis.wco).toFixed(3)}
+              {axis.name}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div
+                className={cn(
+                  "tabular-nums text-white",
+                  roomy ? "text-sm" : "text-lg"
+                )}
+              >
+                {axis.wpos.toFixed(3)}
               </div>
-            )}
-          </div>
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              onZero(i);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
+              {roomy && (
+                <div className="text-[9px] tabular-nums text-sky-300/90">
+                  M {(axis.wpos + axis.wco).toFixed(3)}
+                </div>
+              )}
+            </div>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
                 e.stopPropagation();
                 onZero(i);
-              }
-            }}
-            className="rounded-sm border border-[#111] bg-[#2f2f2f] px-2 py-2 text-[11px] font-semibold text-white"
-          >
-            {"<0>"}
-          </span>
-        </button>
-      ))}
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                  onZero(i);
+                }
+              }}
+              className="rounded-sm border border-[#111] bg-[#2f2f2f] px-1.5 py-1 text-[10px] font-semibold text-white"
+            >
+              {"<0>"}
+            </span>
+          </button>
+        ))}
+      </div>
 
       {roomy && (
-        <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
           <TeleCell title="FEED mm/min" value={feedRate.toFixed(0)} />
           <TeleCell
             title="LASER S cmd"
@@ -321,8 +415,8 @@ function MpgView({
         </div>
       )}
 
-      <div className="mt-auto">
-        <div className="mb-1 text-[9px] uppercase tracking-wider text-zinc-300">
+      <div>
+        <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
           Step (mm)
         </div>
         <div className="grid grid-cols-4 gap-1">
@@ -332,7 +426,7 @@ function MpgView({
               type="button"
               onClick={() => onStep(s)}
               className={cn(
-                "rounded-sm border py-2 text-[11px] font-semibold",
+                "rounded-sm border py-1.5 text-[11px] font-semibold",
                 step === s
                   ? "border-sky-400 bg-sky-700 text-white"
                   : "border-[#222] bg-[#2f2f2f] text-zinc-200"
