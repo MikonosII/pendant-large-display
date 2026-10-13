@@ -15,6 +15,7 @@
 #include "i2c_mpg_io.h"
 #include "job_store.h"
 #include "pendant_cfg.h"
+#include "program_sender.h"
 #include "ui_pendant.h"
 
 static LGFX gfx;
@@ -131,6 +132,7 @@ void setup() {
 
 void loop() {
   grbl_link_poll();
+  program_sender_poll();
   i2c_mpg_poll();
   handwheel_poll();
   lv_timer_handler();

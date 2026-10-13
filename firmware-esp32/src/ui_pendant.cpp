@@ -7,6 +7,7 @@
 #include "handwheel.h"
 #include "i2c_mpg_io.h"
 #include "job_store.h"
+#include "program_sender.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,8 +35,13 @@ static lv_obj_t *path_job_hint;
 
 static lv_obj_t *gcode_list;
 static lv_obj_t *gcode_status_lbl;
+static lv_obj_t *gcode_run_btn;
+static lv_obj_t *gcode_hold_btn;
+static lv_obj_t *gcode_stop_btn;
+static lv_obj_t *gcode_prog_lbl;
 static job_entry_t gcode_entries[JOB_STORE_MAX_FILES];
 static unsigned gcode_entry_count = 0;
+static char job_store_path[JOB_STORE_PATH_LEN] = "embedded:sample";
 
 static lv_obj_t *probe_axis_btns[3];
 static lv_obj_t *probe_contact_lbl;
@@ -181,11 +187,16 @@ static void apply_loaded_job() {
   update_head();
 }
 
+static void refresh_prog_ui(void);
+
 static void load_sample_job() {
   if (!ensure_job_path_buf()) return;
   job_path_len = gcode_parse_toolpath(SAMPLE_JOB_NC, job_path, GCODE_PATH_MAX_SEGS);
   strncpy(job_name, SAMPLE_JOB_NAME, sizeof(job_name) - 1);
   job_name[sizeof(job_name) - 1] = '\0';
+  strncpy(job_store_path, "embedded:sample", sizeof(job_store_path) - 1);
+  job_store_path[sizeof(job_store_path) - 1] = '\0';
+  (void)program_sender_load(job_store_path);
   Serial.printf("[gcode] loaded %s → %u segs\n", job_name, job_path_len);
 }
 
@@ -195,7 +206,11 @@ static bool load_job_from_store(const char *path) {
       job_store_load_path(path, job_path, GCODE_PATH_MAX_SEGS, job_name, sizeof(job_name));
   job_path_len = n;
   if (n == 0) return false;
+  strncpy(job_store_path, path, sizeof(job_store_path) - 1);
+  job_store_path[sizeof(job_store_path) - 1] = '\0';
+  (void)program_sender_load(path);
   apply_loaded_job();
+  refresh_prog_ui();
   return true;
 }
 
@@ -821,6 +836,53 @@ static lv_obj_t *make_laser_pair(lv_obj_t *parent, lv_obj_t **cmd_out, lv_obj_t 
   return box;
 }
 
+static void refresh_prog_ui(void) {
+  if (gcode_prog_lbl) {
+    char buf[128];
+    uint32_t sent = program_sender_sent_lines();
+    uint32_t total = program_sender_total_lines();
+    if (total > 0) {
+      snprintf(buf, sizeof(buf), "%s\n%lu / %lu lines", program_sender_message(),
+               (unsigned long)sent, (unsigned long)total);
+    } else {
+      snprintf(buf, sizeof(buf), "%s\n%lu lines sent", program_sender_message(),
+               (unsigned long)sent);
+    }
+    lv_label_set_text(gcode_prog_lbl, buf);
+  }
+  prog_state_t st = program_sender_state();
+  bool active = (st == PROG_RUNNING || st == PROG_HOLD || st == PROG_DRAINING);
+  if (gcode_run_btn) style_chrome_btn(gcode_run_btn, st == PROG_RUNNING || st == PROG_DRAINING);
+  if (gcode_hold_btn) style_chrome_btn(gcode_hold_btn, st == PROG_HOLD);
+  if (gcode_stop_btn) style_chrome_btn(gcode_stop_btn, st == PROG_ERROR);
+  (void)active;
+}
+
+static void on_gcode_run(lv_event_t *e) {
+  (void)e;
+  prog_state_t st = program_sender_state();
+  if (st == PROG_HOLD) {
+    program_sender_resume();
+  } else {
+    if (!program_sender_start()) {
+      // message already set
+    }
+  }
+  refresh_prog_ui();
+}
+
+static void on_gcode_hold(lv_event_t *e) {
+  (void)e;
+  program_sender_hold();
+  refresh_prog_ui();
+}
+
+static void on_gcode_stop(lv_event_t *e) {
+  (void)e;
+  program_sender_stop();
+  refresh_prog_ui();
+}
+
 static void on_gcode_item(lv_event_t *e) {
   unsigned idx = (unsigned)(uintptr_t)lv_event_get_user_data(e);
   if (idx >= gcode_entry_count) return;
@@ -829,7 +891,7 @@ static void on_gcode_item(lv_event_t *e) {
   if (gcode_status_lbl) {
     char buf[96];
     if (ok) {
-      const char *src = ent->src == JOB_SRC_SD       ? "SD"
+      const char *src = ent->src == JOB_SRC_SD         ? "SD"
                         : ent->src == JOB_SRC_LITTLEFS ? "LFS"
                                                        : "ROM";
       snprintf(buf, sizeof(buf), "Loaded %s (%s) · %u segs", job_name, src, job_path_len);
@@ -838,6 +900,7 @@ static void on_gcode_item(lv_event_t *e) {
     }
     lv_label_set_text(gcode_status_lbl, buf);
   }
+  refresh_prog_ui();
 }
 
 static void refresh_gcode_list() {
@@ -1457,8 +1520,57 @@ void ui_pendant_create() {
     lv_obj_set_pos(gcode_status_lbl, 4, 28);
     lv_label_set_text(gcode_status_lbl, "");
 
+    const int btn_h = 52;
+    const int btn_y = content_h - 8 - btn_h - 56;
+    int bw = (UI_H_RES - 12 - 20) / 3;
+    gcode_run_btn = lv_btn_create(gcode_panel);
+    lv_obj_set_size(gcode_run_btn, bw - 2, btn_h);
+    lv_obj_set_pos(gcode_run_btn, 4, btn_y);
+    style_chrome_btn(gcode_run_btn, false);
+    lv_obj_set_style_bg_color(gcode_run_btn, lv_color_hex(0x1b5e20), 0);
+    {
+      lv_obj_t *l = lv_label_create(gcode_run_btn);
+      lv_label_set_text(l, "RUN");
+      lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+      lv_obj_center(l);
+    }
+    lv_obj_add_event_cb(gcode_run_btn, on_gcode_run, LV_EVENT_CLICKED, NULL);
+
+    gcode_hold_btn = lv_btn_create(gcode_panel);
+    lv_obj_set_size(gcode_hold_btn, bw - 2, btn_h);
+    lv_obj_set_pos(gcode_hold_btn, 4 + bw, btn_y);
+    style_chrome_btn(gcode_hold_btn, false);
+    {
+      lv_obj_t *l = lv_label_create(gcode_hold_btn);
+      lv_label_set_text(l, "HOLD");
+      lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+      lv_obj_center(l);
+    }
+    lv_obj_add_event_cb(gcode_hold_btn, on_gcode_hold, LV_EVENT_CLICKED, NULL);
+
+    gcode_stop_btn = lv_btn_create(gcode_panel);
+    lv_obj_set_size(gcode_stop_btn, bw - 2, btn_h);
+    lv_obj_set_pos(gcode_stop_btn, 4 + 2 * bw, btn_y);
+    style_chrome_btn(gcode_stop_btn, false);
+    lv_obj_set_style_bg_color(gcode_stop_btn, lv_color_hex(0x6b1b1b), 0);
+    {
+      lv_obj_t *l = lv_label_create(gcode_stop_btn);
+      lv_label_set_text(l, "STOP");
+      lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+      lv_obj_center(l);
+    }
+    lv_obj_add_event_cb(gcode_stop_btn, on_gcode_stop, LV_EVENT_CLICKED, NULL);
+
+    gcode_prog_lbl = lv_label_create(gcode_panel);
+    lv_obj_set_style_text_font(gcode_prog_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(gcode_prog_lbl, lv_color_hex(0xaad4aa), 0);
+    lv_label_set_long_mode(gcode_prog_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(gcode_prog_lbl, UI_H_RES - 28);
+    lv_obj_set_pos(gcode_prog_lbl, 4, btn_y + btn_h + 6);
+    lv_label_set_text(gcode_prog_lbl, "Ready");
+
     gcode_list = lv_obj_create(gcode_panel);
-    lv_obj_set_size(gcode_list, UI_H_RES - 20, content_h - 100);
+    lv_obj_set_size(gcode_list, UI_H_RES - 20, btn_y - 64);
     lv_obj_set_pos(gcode_list, 0, 56);
     lv_obj_set_style_bg_color(gcode_list, lv_color_hex(0x2a2a2a), 0);
     lv_obj_set_style_border_width(gcode_list, 1, 0);
@@ -1466,6 +1578,7 @@ void ui_pendant_create() {
     lv_obj_set_style_pad_all(gcode_list, 4, 0);
     lv_obj_set_style_pad_row(gcode_list, 4, 0);
     lv_obj_set_flex_flow(gcode_list, LV_FLEX_FLOW_COLUMN);
+    refresh_prog_ui();
   }
 
   // ----- PROBE panel -----
@@ -1669,6 +1782,8 @@ void ui_pendant_tick() {
   const uint32_t now = millis();
   if (now - last_ui_ms < 100) return;
   last_ui_ms = now;
+
+  if (page_idx == 3) refresh_prog_ui();
 
   grbl_status_t st;
   if (!grbl_link_get_status(&st) || !st.online) {

@@ -50,6 +50,7 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 * **LASER ON / OFF** (FEED tab) — power in **percent (0.1% steps)** → `M3 S` via `$30`; ON = `M64` + `M3`; OFF = `M65` + `M5`. Dout = `LASER_ENABLE_DOUT`; default = `LASER_FEED_PCT` (5.0%).
 * **PROBE** — axis select, G38.2/G38.3 toward WPos ± travel, live `Pn:P` contact, last `[PRB:]` machine coords, Zero WPos
 * **GCODE / jobs** — list + load embedded sample, LittleFS `/jobs`, and SD/TF `/jobs` into the toolpath preview
+* **Program sender** — GCODE **RUN / HOLD / STOP** streams the loaded NC to grblHAL one line per `ok` (memory if it fits, else line-by-line from FS). Offline demo paces without a controller.
 * **I2C MPG expander** (optional) — PCF8574 on SDA15/SCL16 for handwheel A/B + axis/step buttons when GPIO is scarce
 
 LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. The pendant preview is from NC loaded/parsed on the pendant (embedded sample, LittleFS/SD `/jobs`, or a file in the lab). Use **START** after the controller has the job (or is in Hold) to cycle-start from the device.
@@ -106,6 +107,8 @@ g++ -std=c++17 -I include -o /tmp/test_mpg_framed \
   test/test_mpg_framed.cpp src/mpg_framed.cpp && /tmp/test_mpg_framed
 g++ -std=c++17 -I include -DPENDANT_CFG_HOST_TEST -o /tmp/test_pendant_cfg \
   test/test_pendant_cfg.cpp src/pendant_cfg_parse.cpp && /tmp/test_pendant_cfg
+g++ -std=c++17 -I include -o /tmp/test_program_sender \
+  test/test_program_sender.cpp src/program_sender_parse.cpp && /tmp/test_program_sender
 g++ -std=c++17 -I include -o /tmp/test_i2c_mpg_io \
   test/test_i2c_mpg_io.cpp && /tmp/test_i2c_mpg_io
 ```
@@ -126,7 +129,6 @@ Stock pendant uses a **100 PPR** quadrature wheel. CrowPanel Advance has almost 
 
 ## Next (not in this slice)
 
-* Program sender (stream NC to grblHAL from the pendant)
 * Case / mounting for the panel + handwheel
 * Hardware smoke on CrowPanel + controller
 

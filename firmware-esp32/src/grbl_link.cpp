@@ -31,6 +31,7 @@ static bool want_mpg = true;
 static bool ever_seen = false;
 static bool use_framed = false;
 static mpg_framed_t *framed = nullptr;
+static grbl_rx_evt_t g_rx_evt = GRBL_RX_NONE;
 
 // --- framed HW glue ---
 static bool hw_read(void *ctx, uint8_t *byte) {
@@ -88,8 +89,22 @@ static void handle_line(char *line) {
     return;
   }
 
-  if (!strcmp(line, "ok") || !strncmp(line, "error:", 6) || !strncmp(line, "ALARM:", 6) ||
-      !strncmp(line, "Grbl", 4)) {
+  if (!strcmp(line, "ok")) {
+    g_rx_evt = GRBL_RX_OK;
+    Serial.printf("[grbl] %s\n", line);
+    return;
+  }
+  if (!strncmp(line, "error:", 6)) {
+    g_rx_evt = GRBL_RX_ERROR;
+    Serial.printf("[grbl] %s\n", line);
+    return;
+  }
+  if (!strncmp(line, "ALARM:", 6)) {
+    g_rx_evt = GRBL_RX_ALARM;
+    Serial.printf("[grbl] %s\n", line);
+    return;
+  }
+  if (!strncmp(line, "Grbl", 4)) {
     Serial.printf("[grbl] %s\n", line);
   }
 }
@@ -320,6 +335,20 @@ bool grbl_link_probe_away(int axis, float target_mm, float feed_mm_min) {
 }
 
 void grbl_link_probe_ack(void) { g_status.probe_fresh = false; }
+
+grbl_rx_evt_t grbl_link_take_rx_evt(void) {
+  grbl_rx_evt_t e = g_rx_evt;
+  g_rx_evt = GRBL_RX_NONE;
+  return e;
+}
+
+void grbl_link_clear_rx_evt(void) { g_rx_evt = GRBL_RX_NONE; }
+
+bool grbl_link_send_line(const char *line) {
+  if (!line || !line[0]) return false;
+  send_line(line);
+  return true;
+}
 
 bool grbl_link_laser_enable(void) {
   if (!grbl_link_online() || !g_status.mpg_mode) return false;

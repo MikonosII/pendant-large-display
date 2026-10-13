@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PageId, ScreenProfile } from "@/lib/screen-profiles";
 import { PAGES } from "@/lib/screen-profiles";
 import {
@@ -1117,8 +1117,40 @@ function GcodeView({
   onLoad: (name: string, nc: string) => void;
   onReloadSample: () => void;
 }) {
+  const totalLines = Math.max(segCount, 1);
+  const [stream, setStream] = useState<"idle" | "run" | "hold" | "done">("idle");
+  const [sent, setSent] = useState(0);
+
+  useEffect(() => {
+    setStream("idle");
+    setSent(0);
+  }, [name]);
+
+  useEffect(() => {
+    if (stream !== "run") return;
+    const id = window.setInterval(() => {
+      setSent((n) => {
+        if (n + 1 >= totalLines) {
+          setStream("done");
+          return totalLines;
+        }
+        return n + 1;
+      });
+    }, 80);
+    return () => window.clearInterval(id);
+  }, [stream, totalLines]);
+
+  const msg =
+    stream === "run"
+      ? "Streaming · demo"
+      : stream === "hold"
+        ? "Hold"
+        : stream === "done"
+          ? `Done · ${sent} lines`
+          : "Ready · lab mock";
+
   return (
-    <div className="flex h-full flex-col gap-3 px-2 py-3 text-zinc-200">
+    <div className="flex h-full flex-col gap-2 px-2 py-3 text-zinc-200">
       <div>
         <div className="text-[10px] uppercase tracking-widest text-zinc-400">
           G-code / jobs
@@ -1136,35 +1168,81 @@ function GcodeView({
           {warnings.slice(0, 4).join(" · ")}
         </div>
       )}
-      <div className="rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px]">
-        <div className="font-semibold text-white">ROM · sample-badge.nc</div>
-        <div className="text-[10px] text-zinc-400">embedded · always listed on device</div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-auto">
+        <div className="rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px]">
+          <div className="font-semibold text-white">ROM · sample-badge.nc</div>
+          <div className="text-[10px] text-zinc-400">embedded · always listed on device</div>
+        </div>
+        <label className="inline-flex w-full cursor-pointer items-center justify-center rounded-sm border border-[#222] bg-[#2f2f2f] px-3 py-2 text-[11px] font-semibold text-white">
+          Load .nc / .gcode
+          <input
+            type="file"
+            accept=".nc,.gcode,.ngc,.txt"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const text = await file.text();
+              onLoad(file.name, text);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={onReloadSample}
+          className="w-full rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px] font-semibold text-zinc-200"
+        >
+          Reload sample-badge.nc
+        </button>
       </div>
-      <label className="inline-flex cursor-pointer items-center justify-center rounded-sm border border-[#222] bg-[#2f2f2f] px-3 py-2 text-[11px] font-semibold text-white">
-        Load .nc / .gcode
-        <input
-          type="file"
-          accept=".nc,.gcode,.ngc,.txt"
-          className="hidden"
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const text = await file.text();
-            onLoad(file.name, text);
-            e.target.value = "";
+      <div className="grid grid-cols-3 gap-1">
+        <button
+          type="button"
+          onClick={() => {
+            if (stream === "hold") setStream("run");
+            else {
+              setSent(0);
+              setStream("run");
+            }
           }}
-        />
-      </label>
-      <button
-        type="button"
-        onClick={onReloadSample}
-        className="rounded-sm border border-[#222] bg-[#2a2a2a] px-3 py-2 text-[11px] font-semibold text-zinc-200"
-      >
-        Reload sample-badge.nc
-      </button>
+          className={cn(
+            "rounded-sm border border-[#222] py-3 text-sm font-semibold text-white",
+            stream === "run" ? "bg-[#2e7d32]" : "bg-[#1b5e20]",
+          )}
+        >
+          RUN
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (stream === "run") setStream("hold");
+          }}
+          className={cn(
+            "rounded-sm border border-[#222] py-3 text-sm font-semibold text-white",
+            stream === "hold" ? "bg-[#555]" : "bg-[#2f2f2f]",
+          )}
+        >
+          HOLD
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setStream("idle");
+            setSent(0);
+          }}
+          className="rounded-sm border border-[#222] bg-[#6b1b1b] py-3 text-sm font-semibold text-white"
+        >
+          STOP
+        </button>
+      </div>
+      <div className="text-[11px] leading-snug text-[#aad4aa]">
+        {msg}
+        <br />
+        {sent} / {totalLines} lines
+      </div>
       <p className="text-[10px] leading-relaxed text-zinc-400">
-        On device: LittleFS `/jobs` + SD `/jobs` (TF DIP mode). Lab uses a
-        browser file picker; preview updates the MPG canvas.
+        Device streams NC to grblHAL one line per ok. Lab mocks progress only.
       </p>
     </div>
   );

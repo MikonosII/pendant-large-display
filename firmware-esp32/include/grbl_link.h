@@ -97,6 +97,24 @@ void grbl_link_override(grbl_ov_t cmd);
 bool grbl_link_framed(void);
 void grbl_link_set_framed(bool framed_on);
 
+/** RX acknowledgement events for program streaming (ok / error / ALARM). */
+typedef enum {
+  GRBL_RX_NONE = 0,
+  GRBL_RX_OK,
+  GRBL_RX_ERROR,
+  GRBL_RX_ALARM,
+} grbl_rx_evt_t;
+
+/** Consume the latest ack event (clears it). */
+grbl_rx_evt_t grbl_link_take_rx_evt(void);
+void grbl_link_clear_rx_evt(void);
+
+/**
+ * Send one G-code / system line (appends CR). Used by the program sender.
+ * Does not wait for ok — pair with grbl_link_take_rx_evt().
+ */
+bool grbl_link_send_line(const char *line);
+
 #ifdef __cplusplus
 }
 #endif
