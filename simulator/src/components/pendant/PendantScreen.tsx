@@ -41,6 +41,8 @@ export function PendantScreen({ profile, scale }: Props) {
     );
   };
 
+  // Use CSS zoom (not transform:scale) so hit-testing matches the painted
+  // pixels — transform leaves the layout box at 1× and breaks clicks.
   return (
     <div
       className="relative overflow-hidden rounded-sm shadow-[0_20px_60px_rgba(0,0,0,0.45)] ring-1 ring-black/40"
@@ -52,11 +54,10 @@ export function PendantScreen({ profile, scale }: Props) {
       }}
     >
       <div
-        className="origin-top-left"
         style={{
           width: profile.logicalW,
           height: profile.logicalH,
-          transform: `scale(${scale})`,
+          zoom: scale,
         }}
       >
         {/* Header tabs */}

@@ -53,19 +53,23 @@ export function LayoutLab() {
               <button
                 key={p.id}
                 type="button"
+                data-profile={p.id}
+                aria-pressed={profileId === p.id}
                 onClick={() => setProfileId(p.id)}
                 className={cn(
-                  "rounded-md border px-3 py-2.5 text-left transition-colors",
+                  "relative z-10 w-full cursor-pointer rounded-md border px-3 py-2.5 text-left transition-colors",
                   profileId === p.id
                     ? "border-amber-600 bg-amber-50 text-zinc-900"
                     : "border-zinc-200 bg-white/70 text-zinc-700 hover:border-zinc-300"
                 )}
               >
-                <div className="text-sm font-semibold">{p.name}</div>
-                <div className="mt-0.5 text-[11px] text-zinc-500">
+                <span className="block text-sm font-semibold pointer-events-none">
+                  {p.name}
+                </span>
+                <span className="mt-0.5 block text-[11px] text-zinc-500 pointer-events-none">
                   {p.logicalW}×{p.logicalH} · header {p.headerH}px · soft{" "}
                   {p.softBtnH}px
-                </div>
+                </span>
               </button>
             ))}
           </div>
