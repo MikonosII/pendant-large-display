@@ -399,12 +399,12 @@ function MpgView({
         <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
           <TeleCell title="FEED mm/min" value={feedRate.toFixed(0)} />
           <TeleCell
-            title="LASER S cmd"
-            value={laserCmd.toFixed(0)}
+            title="LASER CMD %"
+            value={`${Math.min(100, Math.max(0, Math.round((laserCmd / 1000) * 100)))}%`}
             onClick={() => onLaser(10)}
           />
           <TeleCell
-            title="LASER %"
+            title="LASER ACT %"
             value={`${Math.min(100, Math.max(0, Math.round((laserAct / 1000) * 100)))}%`}
             onClick={() => onLaser(-10)}
           />
