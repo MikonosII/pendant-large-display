@@ -494,7 +494,7 @@ function MachineMap({
   const hy = Math.min(bedY, Math.max(0, y));
 
   return (
-    <div className="relative h-[200px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
+    <div className="relative h-[255px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
       <div className="absolute left-1.5 top-1 z-10 text-[10px] text-zinc-400">
         WPos map · {bedX}×{bedY} mm
       </div>
@@ -810,7 +810,19 @@ function MpgView({
         {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
       </button>
 
-      <div className="mt-auto">
+      <div className="mt-auto space-y-1">
+        <div className="grid grid-cols-4 gap-1">
+          {["XY0", "Park", "Z0", "Unlock"].map((name) => (
+            <button
+              key={name}
+              type="button"
+              className="rounded-sm border border-[#222] bg-[#2a2a2a] py-2.5 text-[11px] font-semibold text-zinc-100"
+              title={`Lab mock — device sends /macros.cfg entry "${name}"`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
         <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
           Step (mm)
         </div>

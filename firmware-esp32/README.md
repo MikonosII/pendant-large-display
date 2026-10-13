@@ -44,6 +44,7 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 * **Plain ASCII UART ↔ grblHAL** on CrowPanel **UART1-OUT** (status, MPG claim, jog, hold, zero)
 * Offline demo jog/telemetry when no controller answers (status bar shows `Offline · demo`)
 * **MPG live WPos map** — work envelope (`machine.bed_x` / `machine.bed_y` in settings.cfg) + head marker; denser DRO
+* **Soft macros** — up to 4 buttons from **`/macros.cfg`** on SD (preferred) or LittleFS (`Name = g-code`). Edit the file, reboot — no rebuild.
 * **GCODE toolpath preview** — path canvas for jobs you load/RUN from the pendant (not from LightBurn)
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
 * **MPG START** — green confirm button sends cycle start (`~`) so a job already on the controller can be released from the pendant
@@ -111,6 +112,8 @@ g++ -std=c++17 -I include -DPENDANT_CFG_HOST_TEST -o /tmp/test_pendant_cfg \
   test/test_pendant_cfg.cpp src/pendant_cfg_parse.cpp && /tmp/test_pendant_cfg
 g++ -std=c++17 -I include -o /tmp/test_program_sender \
   test/test_program_sender.cpp src/program_sender_parse.cpp && /tmp/test_program_sender
+g++ -std=c++17 -I include -o /tmp/test_macros \
+  test/test_macros.cpp src/macros_parse.cpp && /tmp/test_macros
 g++ -std=c++17 -I include -o /tmp/test_i2c_mpg_io \
   test/test_i2c_mpg_io.cpp && /tmp/test_i2c_mpg_io
 ```
@@ -123,9 +126,22 @@ Stock pendant uses a **100 PPR** quadrature wheel. CrowPanel Advance has almost 
 
 **Option B — I2C expander** (preferred when TF uses IO4–6): set `i2c_mpg.enable 1` (and optional `i2c_mpg.addr 0x20`). PCF8574 on SDA15/SCL16 — **P0/P1** wheel, **P2–P4** axis, **P5** step (active-low).
 
+### Soft macros
+
+Edit **`/macros.cfg`** (SD preferred, or LittleFS). Template: [`data/macros.cfg`](data/macros.cfg).
+
+```text
+XY0 = G90 G0 X0 Y0
+Park = G90 G0 X0 Y0
+Z0 = G90 G0 Z0
+Unlock = $X
+```
+
+Use `;` to chain a few short commands. Labels should stay short. Buttons appear on the MPG page above the step sizes. Needs Idle + MPG when online (Unlock may run from Alarm).
+
 ### SD / LittleFS jobs
 
-* LittleFS is mounted at boot. Seed with `pio run -t uploadfs` from `data/` (includes `settings.cfg`, `boards/`, `jobs/`).
+* LittleFS is mounted at boot. Seed with `pio run -t uploadfs` from `data/` (includes `settings.cfg`, `macros.cfg`, `boards/`, `jobs/`).
 * SD/TF SPI pins come from `/settings.cfg` (`sd.*`). Set rear DIP to a **TF-card** mode. Set `sd.enable 0` to reclaim pins for a GPIO handwheel.
 * GCODE tab lists embedded sample + `/jobs` on each mounted store.
 

@@ -8,6 +8,7 @@
 #include "i2c_mpg_io.h"
 #include "job_store.h"
 #include "program_sender.h"
+#include "macros.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -92,6 +93,7 @@ static lv_obj_t *soft_btns[3];
 static lv_obj_t *start_btn;
 static lv_obj_t *laser_test_btn;
 static lv_obj_t *laser_test_lbl;
+static lv_obj_t *macro_btns[MACRO_MAX];
 static lv_obj_t *feed_laser_on_btn;
 static lv_obj_t *feed_laser_off_btn;
 static lv_obj_t *pf_laser_val;
@@ -519,6 +521,18 @@ static void on_laser_test(lv_event_t *e) {
   (void)e;
   // Toggle K+ enable only (no PWM) for beam / wiring check
   set_laser_k(!laser_k_on, false);
+}
+
+static void on_macro(lv_event_t *e) {
+  unsigned idx = (unsigned)(uintptr_t)lv_event_get_user_data(e);
+  if (!macros_run(idx)) {
+    if (state_lbl) lv_label_set_text(state_lbl, "Macro blocked (Idle+MPG?)");
+  } else if (state_lbl) {
+    const macro_t *m = macros_get(idx);
+    char buf[48];
+    snprintf(buf, sizeof(buf), "Macro · %s", m ? m->name : "?");
+    lv_label_set_text(state_lbl, buf);
+  }
 }
 
 static void on_feed_laser_on(lv_event_t *e) {
@@ -1246,10 +1260,12 @@ void ui_pendant_create() {
   lv_obj_set_style_pad_all(mpg_panel, 0, 0);
   lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Steps sit just above the global Hold / ±Jog soft row
+  // Steps sit just above the global Hold / ±Jog soft row; macros just above steps
   const int step_h = 44;
+  const int macro_h = 48;
   const int step_y = (content_h - 8) - step_h;
-  const int map_h_px = 220;
+  const int macro_y = step_y - macro_h - 4;
+  const int map_h_px = 255;
   setup_live_map(mpg_panel, 0, UI_H_RES - 12, map_h_px);
 
   // Denser 3-column DRO under the live map
@@ -1334,6 +1350,31 @@ void ui_pendant_create() {
   lv_obj_center(laser_test_lbl);
   lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
   refresh_laser_enable_ui();
+
+  // Soft macros from /macros.cfg (SD preferred)
+  unsigned mc = macros_count();
+  if (mc > MACRO_MAX) mc = MACRO_MAX;
+  if (mc == 0) {
+    for (int i = 0; i < MACRO_MAX; i++) macro_btns[i] = nullptr;
+  } else {
+    int mbw = (UI_H_RES - 12 - 3 * (int)(mc - 1)) / (int)mc;
+    for (unsigned i = 0; i < MACRO_MAX; i++) {
+      if (i >= mc) {
+        macro_btns[i] = nullptr;
+        continue;
+      }
+      const macro_t *m = macros_get(i);
+      macro_btns[i] = lv_btn_create(mpg_panel);
+      lv_obj_set_size(macro_btns[i], mbw, macro_h);
+      lv_obj_set_pos(macro_btns[i], (int)i * (mbw + 3), macro_y);
+      style_chrome_btn(macro_btns[i], false);
+      lv_obj_t *lbl = lv_label_create(macro_btns[i]);
+      lv_label_set_text(lbl, m ? m->name : "?");
+      lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+      lv_obj_center(lbl);
+      lv_obj_add_event_cb(macro_btns[i], on_macro, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
+    }
+  }
 
   for (int i = 0; i < 4; i++) {
     step_btns[i] = lv_btn_create(mpg_panel);

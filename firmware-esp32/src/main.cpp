@@ -15,6 +15,7 @@
 #include "i2c_mpg_io.h"
 #include "job_store.h"
 #include "pendant_cfg.h"
+#include "macros.h"
 #include "program_sender.h"
 #include "ui_pendant.h"
 
@@ -126,6 +127,7 @@ void setup() {
   handwheel_begin();
   i2c_mpg_begin();  // optional PCF8574 on same Wire bus as touch
   job_store_begin();
+  macros_begin();
   ui_pendant_create();
   Serial.printf("[ui] %dx%d ready\n", UI_H_RES, UI_V_RES);
 }
@@ -133,6 +135,7 @@ void setup() {
 void loop() {
   grbl_link_poll();
   program_sender_poll();
+  macros_poll();
   i2c_mpg_poll();
   handwheel_poll();
   lv_timer_handler();
