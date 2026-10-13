@@ -315,7 +315,7 @@ bool grbl_link_probe_away(int axis, float target_mm, float feed_mm_min) {
 
 void grbl_link_probe_ack(void) { g_status.probe_fresh = false; }
 
-bool grbl_link_laser_test(void) {
+bool grbl_link_laser_enable(void) {
   if (!grbl_link_online() || !g_status.mpg_mode) return false;
   if (strcmp(g_status.state, "Idle") != 0) return false;
   // Immediate digital-out on: controller should pull PSU K+ to GND when active.
@@ -323,6 +323,16 @@ bool grbl_link_laser_test(void) {
   snprintf(cmd, sizeof(cmd), "M64P%d\r", (int)LASER_ENABLE_DOUT);
   send_line(cmd);
   Serial.printf("[grbl] laser enable K+  %s", cmd);
+  return true;
+}
+
+bool grbl_link_laser_on(float s_cmd) {
+  if (!grbl_link_laser_enable()) return false;
+  if (!(s_cmd > 0.0f)) s_cmd = 50.0f;
+  char cmd[32];
+  snprintf(cmd, sizeof(cmd), "M3S%.0f\r", s_cmd);
+  send_line(cmd);
+  Serial.printf("[grbl] laser on PWM  %s", cmd);
   return true;
 }
 

@@ -39,6 +39,7 @@ export function PendantScreen({ profile }: Props) {
   const [feedRate, setFeedRate] = useState(1200);
   const [laserCmd, setLaserCmd] = useState(650);
   const [laserKOn, setLaserKOn] = useState(false);
+  const [laserFeedS, setLaserFeedS] = useState(50);
   const [speedOv, setSpeedOv] = useState(100);
   const [rapidOv, setRapidOv] = useState(100);
   const [powerFeed, setPowerFeed] = useState(300);
@@ -179,8 +180,7 @@ export function PendantScreen({ profile }: Props) {
               }}
               startFlash={startFlash}
               laserKOn={laserKOn}
-              onLaserTest={() => setLaserKOn(true)}
-              onLaserOff={() => setLaserKOn(false)}
+              onLaserTest={() => setLaserKOn((v) => !v)}
             />
           )}
           {page === "OVERRIDE" && (
@@ -196,8 +196,13 @@ export function PendantScreen({ profile }: Props) {
               axes={axes}
               activeAxis={activeAxis}
               powerFeed={powerFeed}
+              laserFeedS={laserFeedS}
+              laserKOn={laserKOn}
               onSelectAxis={setActiveAxis}
               onFeed={setPowerFeed}
+              onLaserS={setLaserFeedS}
+              onLaserOn={() => setLaserKOn(true)}
+              onLaserOff={() => setLaserKOn(false)}
               onJog={(dir) => {
                 setAxes((prev) =>
                   prev.map((a, i) =>
@@ -571,7 +576,6 @@ function MpgView({
   startFlash,
   laserKOn,
   onLaserTest,
-  onLaserOff,
 }: {
   axes: Axis[];
   activeAxis: number;
@@ -593,7 +597,6 @@ function MpgView({
   startFlash: boolean;
   laserKOn: boolean;
   onLaserTest: () => void;
-  onLaserOff: () => void;
 }) {
   const steps = [0.01, 0.1, 1, 10];
   const laserOn = laserCmd > 0;
@@ -724,27 +727,18 @@ function MpgView({
         START
       </button>
 
-      <div className="grid grid-cols-2 gap-1.5">
-        <button
-          type="button"
-          onClick={onLaserTest}
-          className={cn(
-            "rounded-sm border py-2.5 text-[11px] font-bold tracking-wide text-white transition-colors",
-            laserKOn
-              ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
-              : "border-orange-950 bg-orange-950/80"
-          )}
-        >
-          {laserKOn ? "LASER ON" : "LASER TEST"}
-        </button>
-        <button
-          type="button"
-          onClick={onLaserOff}
-          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2.5 text-[11px] font-bold tracking-wide text-white"
-        >
-          LASER OFF
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onLaserTest}
+        className={cn(
+          "w-full rounded-sm border py-2.5 text-[11px] font-bold tracking-wide text-white transition-colors",
+          laserKOn
+            ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
+            : "border-orange-950 bg-orange-950/80"
+        )}
+      >
+        {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
+      </button>
     </div>
   );
 }
@@ -955,19 +949,29 @@ function FeedView({
   axes,
   activeAxis,
   powerFeed,
+  laserFeedS,
+  laserKOn,
   onSelectAxis,
   onFeed,
+  onLaserS,
+  onLaserOn,
+  onLaserOff,
   onJog,
 }: {
   axes: Axis[];
   activeAxis: number;
   powerFeed: number;
+  laserFeedS: number;
+  laserKOn: boolean;
   onSelectAxis: (i: number) => void;
   onFeed: (n: number) => void;
+  onLaserS: (n: number) => void;
+  onLaserOn: () => void;
+  onLaserOff: () => void;
   onJog: (dir: 1 | -1) => void;
 }) {
   return (
-    <div className="flex h-full flex-col gap-3 px-1 py-2">
+    <div className="flex h-full flex-col gap-3 overflow-y-auto px-1 py-2">
       <div className="text-[10px] uppercase tracking-widest text-zinc-400">
         Power feed
       </div>
@@ -1029,6 +1033,59 @@ function FeedView({
         >
           + Feed 5 mm
         </button>
+      </div>
+
+      <div className="border-t border-[#333] pt-2">
+        <div className="text-[9px] uppercase text-zinc-500">
+          Laser power S ($30 scale)
+        </div>
+        <div className="text-3xl font-bold tabular-nums text-white">
+          {laserFeedS}
+        </div>
+        <div className="mt-1 grid grid-cols-4 gap-1">
+          {[-50, -10, 10, 50].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() =>
+                onLaserS(Math.min(1000, Math.max(1, laserFeedS + d)))
+              }
+              className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+            >
+              {d > 0 ? `+${d}` : d}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            onClick={onLaserOn}
+            className={cn(
+              "rounded-sm border py-3 text-sm font-bold text-white",
+              laserKOn
+                ? "border-amber-400 bg-orange-600"
+                : "border-[#222] bg-[#2f2f2f]"
+            )}
+          >
+            LASER ON
+          </button>
+          <button
+            type="button"
+            onClick={onLaserOff}
+            className={cn(
+              "rounded-sm border py-3 text-sm font-bold text-white",
+              !laserKOn
+                ? "border-[#3d5a80] bg-[#3d5a80]"
+                : "border-[#222] bg-[#2f2f2f]"
+            )}
+          >
+            LASER OFF
+          </button>
+        </div>
+        <p className="mt-1 text-[9px] leading-snug text-zinc-500">
+          ON = K+ (M64) + M3 S. OFF = M65 + M5. MPG LASER TEST toggles K+
+          only.
+        </p>
       </div>
     </div>
   );

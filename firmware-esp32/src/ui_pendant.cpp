@@ -74,7 +74,11 @@ static lv_obj_t *soft_btns[3];
 static lv_obj_t *start_btn;
 static lv_obj_t *laser_test_btn;
 static lv_obj_t *laser_test_lbl;
-static bool laser_k_on = false;  // PSU K+ enable latched from TEST / OFF
+static lv_obj_t *feed_laser_on_btn;
+static lv_obj_t *feed_laser_off_btn;
+static lv_obj_t *pf_laser_val;
+static bool laser_k_on = false;  // PSU K+ enable latched
+static float laser_feed_s = (float)LASER_FEED_S;  // PWM S for FEED LASER ON
 
 static lv_obj_t *feed_lbl;
 static lv_obj_t *laser_cmd_lbl;
@@ -309,6 +313,8 @@ static void refresh_override_ui() {
   }
 }
 
+static void refresh_laser_enable_ui(void);
+
 static void refresh_power_feed_ui() {
   char buf[24];
   if (pf_feed_val) {
@@ -318,6 +324,7 @@ static void refresh_power_feed_ui() {
   for (int i = 0; i < 3; i++) {
     if (pf_axis_btns[i]) style_chrome_btn(pf_axis_btns[i], i == active_axis);
   }
+  refresh_laser_enable_ui();
 }
 
 static void on_start(lv_event_t *e) {
@@ -331,48 +338,91 @@ static void on_start(lv_event_t *e) {
 }
 
 static void refresh_laser_enable_ui() {
-  if (!laser_test_btn) return;
-  if (laser_k_on) {
-    lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0xea580c), 0);
-    lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0xfbbf24), 0);
-    lv_obj_set_style_border_width(laser_test_btn, 2, 0);
-    if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER ON");
-  } else {
-    lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0x7c2d12), 0);
-    lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0x9a3412), 0);
-    lv_obj_set_style_border_width(laser_test_btn, 1, 0);
-    if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER TEST");
+  if (laser_test_btn) {
+    if (laser_k_on) {
+      lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0xea580c), 0);
+      lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0xfbbf24), 0);
+      lv_obj_set_style_border_width(laser_test_btn, 2, 0);
+      if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER TEST · ON");
+    } else {
+      lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0x7c2d12), 0);
+      lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0x9a3412), 0);
+      lv_obj_set_style_border_width(laser_test_btn, 1, 0);
+      if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER TEST");
+    }
   }
+  if (feed_laser_on_btn) {
+    lv_obj_set_style_bg_color(
+        feed_laser_on_btn, laser_k_on ? lv_color_hex(0xea580c) : lv_color_hex(0x2f2f2f), 0);
+    lv_obj_set_style_border_color(
+        feed_laser_on_btn, laser_k_on ? lv_color_hex(0xfbbf24) : lv_color_hex(0x111111), 0);
+    lv_obj_set_style_border_width(feed_laser_on_btn, laser_k_on ? 2 : 1, 0);
+  }
+  if (feed_laser_off_btn) {
+    style_chrome_btn(feed_laser_off_btn, !laser_k_on);
+  }
+  if (pf_laser_val) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%0.0f", laser_feed_s);
+    lv_label_set_text(pf_laser_val, buf);
+  }
+}
+
+static void set_laser_k(bool on, bool with_pwm) {
+  if (on) {
+    if (grbl_link_online()) {
+      bool ok = with_pwm ? grbl_link_laser_on(laser_feed_s) : grbl_link_laser_enable();
+      if (!ok) {
+        lv_label_set_text(state_lbl, "Laser blocked (Idle+MPG?)");
+        return;
+      }
+      char buf[56];
+      if (with_pwm) {
+        snprintf(buf, sizeof(buf), "Laser ON  ·  K+ M64P%d  S%.0f", (int)LASER_ENABLE_DOUT,
+                 laser_feed_s);
+      } else {
+        snprintf(buf, sizeof(buf), "Laser TEST ON  ·  K+ M64P%d", (int)LASER_ENABLE_DOUT);
+      }
+      lv_label_set_text(state_lbl, buf);
+    } else {
+      lv_label_set_text(state_lbl, with_pwm ? "Laser ON  ·  demo" : "Laser TEST ON  ·  demo");
+    }
+    laser_k_on = true;
+  } else {
+    if (grbl_link_online()) {
+      grbl_link_laser_off();
+      char buf[48];
+      snprintf(buf, sizeof(buf), "Laser OFF  ·  M65P%d", (int)LASER_ENABLE_DOUT);
+      lv_label_set_text(state_lbl, buf);
+    } else {
+      lv_label_set_text(state_lbl, "Laser OFF  ·  demo");
+    }
+    laser_k_on = false;
+  }
+  refresh_laser_enable_ui();
 }
 
 static void on_laser_test(lv_event_t *e) {
   (void)e;
-  if (grbl_link_online()) {
-    if (!grbl_link_laser_test()) {
-      lv_label_set_text(state_lbl, "Laser enable blocked (Idle+MPG?)");
-      return;
-    }
-    char buf[48];
-    snprintf(buf, sizeof(buf), "Laser K+ ON  ·  M64P%d", (int)LASER_ENABLE_DOUT);
-    lv_label_set_text(state_lbl, buf);
-  } else {
-    lv_label_set_text(state_lbl, "Laser K+ ON  ·  demo");
-  }
-  laser_k_on = true;
-  refresh_laser_enable_ui();
+  // Toggle K+ enable only (no PWM) for beam / wiring check
+  set_laser_k(!laser_k_on, false);
 }
 
-static void on_laser_off(lv_event_t *e) {
+static void on_feed_laser_on(lv_event_t *e) {
   (void)e;
-  if (grbl_link_online()) {
-    grbl_link_laser_off();
-    char buf[48];
-    snprintf(buf, sizeof(buf), "Laser K+ OFF  ·  M65P%d", (int)LASER_ENABLE_DOUT);
-    lv_label_set_text(state_lbl, buf);
-  } else {
-    lv_label_set_text(state_lbl, "Laser K+ OFF  ·  demo");
-  }
-  laser_k_on = false;
+  set_laser_k(true, true);  // K+ + M3 S from FEED power
+}
+
+static void on_feed_laser_off(lv_event_t *e) {
+  (void)e;
+  set_laser_k(false, false);
+}
+
+static void on_pf_laser_bump(lv_event_t *e) {
+  int d = (int)(intptr_t)lv_event_get_user_data(e);
+  laser_feed_s += (float)d;
+  if (laser_feed_s < 1) laser_feed_s = 1;
+  if (laser_feed_s > 1000) laser_feed_s = 1000;
   refresh_laser_enable_ui();
 }
 
@@ -1038,11 +1088,10 @@ void ui_pendant_create() {
   lv_obj_center(start_lbl);
   lv_obj_add_event_cb(start_btn, on_start, LV_EVENT_CLICKED, NULL);
 
-  // Laser enable (M64 → PSU K+ to GND) / inhibit (M65 + M5)
+  // Laser TEST toggle — K+ enable only (PWM/power lives on FEED tab)
   const int laser_y = step_y + 48 + 52;
-  const int laser_bw = (UI_H_RES - 12 - 6) / 2;
   laser_test_btn = lv_btn_create(mpg_panel);
-  lv_obj_set_size(laser_test_btn, laser_bw, 44);
+  lv_obj_set_size(laser_test_btn, UI_H_RES - 12, 44);
   lv_obj_set_pos(laser_test_btn, 0, laser_y);
   lv_obj_set_style_radius(laser_test_btn, 2, 0);
   lv_obj_set_style_text_color(laser_test_btn, lv_color_hex(0xffffff), 0);
@@ -1051,20 +1100,6 @@ void ui_pendant_create() {
   lv_obj_center(laser_test_lbl);
   lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
   refresh_laser_enable_ui();
-
-  lv_obj_t *laser_off_btn = lv_btn_create(mpg_panel);
-  lv_obj_set_size(laser_off_btn, laser_bw, 44);
-  lv_obj_set_pos(laser_off_btn, laser_bw + 6, laser_y);
-  lv_obj_set_style_radius(laser_off_btn, 2, 0);
-  lv_obj_set_style_border_width(laser_off_btn, 1, 0);
-  lv_obj_set_style_border_color(laser_off_btn, lv_color_hex(0x111111), 0);
-  lv_obj_set_style_bg_color(laser_off_btn, lv_color_hex(0x2f2f2f), 0);
-  lv_obj_set_style_text_color(laser_off_btn, lv_color_hex(0xffffff), 0);
-  lv_obj_t *lo_lbl = lv_label_create(laser_off_btn);
-  lv_label_set_text(lo_lbl, "LASER OFF");
-  lv_obj_set_style_text_font(lo_lbl, &lv_font_montserrat_14, 0);
-  lv_obj_center(lo_lbl);
-  lv_obj_add_event_cb(laser_off_btn, on_laser_off, LV_EVENT_CLICKED, NULL);
 
   // ----- OVERRIDE panel -----
   ov_panel = lv_obj_create(content);
@@ -1222,7 +1257,62 @@ void ui_pendant_create() {
     lv_label_set_text(hint, "Soft −/+ Feed jogs 5 mm at this rate.\nStop cancels an active jog.");
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
-    lv_obj_set_pos(hint, 4, 280);
+    lv_obj_set_pos(hint, 4, 270);
+
+    // Laser power (PWM S) + ON/OFF — K+ enable with M3 S from this setting
+    lv_obj_t *lc = lv_label_create(feed_panel);
+    lv_label_set_text(lc, "LASER POWER  S  ($30 scale)");
+    lv_obj_set_style_text_font(lc, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lc, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(lc, 4, 320);
+    pf_laser_val = lv_label_create(feed_panel);
+    lv_obj_set_style_text_font(pf_laser_val, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(pf_laser_val, lv_color_hex(0xffffff), 0);
+    lv_obj_set_pos(pf_laser_val, 4, 340);
+
+    const int lbumps[] = {-50, -10, 10, 50};
+    const char *llabs[] = {"−50", "−10", "+10", "+50"};
+    for (int i = 0; i < 4; i++) {
+      lv_obj_t *b = lv_btn_create(feed_panel);
+      lv_obj_set_size(b, bbw - 2, 40);
+      lv_obj_set_pos(b, 4 + i * bbw, 386);
+      style_chrome_btn(b, false);
+      lv_obj_t *l = lv_label_create(b);
+      lv_label_set_text(l, llabs[i]);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(b, on_pf_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)lbumps[i]);
+    }
+
+    int lbw = (UI_H_RES - 12 - 16) / 2;
+    feed_laser_on_btn = lv_btn_create(feed_panel);
+    lv_obj_set_size(feed_laser_on_btn, lbw - 2, 48);
+    lv_obj_set_pos(feed_laser_on_btn, 4, 440);
+    lv_obj_set_style_radius(feed_laser_on_btn, 2, 0);
+    lv_obj_set_style_text_color(feed_laser_on_btn, lv_color_hex(0xffffff), 0);
+    lv_obj_t *lon = lv_label_create(feed_laser_on_btn);
+    lv_label_set_text(lon, "LASER ON");
+    lv_obj_set_style_text_font(lon, &lv_font_montserrat_16, 0);
+    lv_obj_center(lon);
+    lv_obj_add_event_cb(feed_laser_on_btn, on_feed_laser_on, LV_EVENT_CLICKED, NULL);
+
+    feed_laser_off_btn = lv_btn_create(feed_panel);
+    lv_obj_set_size(feed_laser_off_btn, lbw - 2, 48);
+    lv_obj_set_pos(feed_laser_off_btn, 4 + lbw, 440);
+    style_chrome_btn(feed_laser_off_btn, true);
+    lv_obj_t *loff = lv_label_create(feed_laser_off_btn);
+    lv_label_set_text(loff, "LASER OFF");
+    lv_obj_set_style_text_font(loff, &lv_font_montserrat_16, 0);
+    lv_obj_center(loff);
+    lv_obj_add_event_cb(feed_laser_off_btn, on_feed_laser_off, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lh = lv_label_create(feed_panel);
+    lv_label_set_long_mode(lh, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(lh, UI_H_RES - 28);
+    lv_label_set_text(lh, "ON = K+ enable (M64) + M3 S. OFF = M65 + M5.\nMPG LASER TEST toggles K+ only.");
+    lv_obj_set_style_text_font(lh, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lh, lv_color_hex(0x888888), 0);
+    lv_obj_set_pos(lh, 4, 500);
+    refresh_laser_enable_ui();
   }
 
   // ----- SETTINGS panel -----

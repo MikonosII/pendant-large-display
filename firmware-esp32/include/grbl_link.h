@@ -54,7 +54,13 @@ void grbl_link_probe_ack(void);
  * (wire that dout via relay/FET so active pulls K+ to ground).
  * Port `n` = LASER_ENABLE_DOUT. Needs Idle + MPG.
  */
-bool grbl_link_laser_test(void);
+bool grbl_link_laser_enable(void);
+
+/**
+ * Operational laser on: K+ enable (`M64 Pn`) plus PWM `M3 S{s}`.
+ * `s` is on the grblHAL $30 scale (from FEED tab power setting).
+ */
+bool grbl_link_laser_on(float s_cmd);
 
 /**
  * Software inhibit: clears enable dout (`M65 Pn`) and sends `M5`
