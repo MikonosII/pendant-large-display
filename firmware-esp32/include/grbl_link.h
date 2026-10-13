@@ -49,6 +49,15 @@ bool grbl_link_probe_away(int axis, float target_mm, float feed_mm_min);
 /** Clear the probe_fresh latch after the UI has consumed a report. */
 void grbl_link_probe_ack(void);
 
+/**
+ * Laser test fire: `M3 S{s}` (constant-power / spindle-enable output).
+ * Uses Idle + MPG. Default S is modest — override with LASER_TEST_S.
+ */
+bool grbl_link_laser_test(float s_cmd);
+
+/** Software inhibit / laser off: `M5` (spindle/laser disable). */
+bool grbl_link_laser_off(void);
+
 /** grblHAL realtime override bytes (0x90–0xA1). */
 typedef enum {
   GRBL_OV_FEED_RESET = 0,

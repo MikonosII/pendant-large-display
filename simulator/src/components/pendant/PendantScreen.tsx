@@ -177,6 +177,8 @@ export function PendantScreen({ profile }: Props) {
                 window.setTimeout(() => setStartFlash(false), 800);
               }}
               startFlash={startFlash}
+              onLaserTest={() => setLaserCmd(50)}
+              onLaserOff={() => setLaserCmd(0)}
             />
           )}
           {page === "OVERRIDE" && (
@@ -565,6 +567,8 @@ function MpgView({
   onLaser,
   onStart,
   startFlash,
+  onLaserTest,
+  onLaserOff,
 }: {
   axes: Axis[];
   activeAxis: number;
@@ -584,6 +588,8 @@ function MpgView({
   onLaser: (d: number) => void;
   onStart: () => void;
   startFlash: boolean;
+  onLaserTest: () => void;
+  onLaserOff: () => void;
 }) {
   const steps = [0.01, 0.1, 1, 10];
   const laserOn = laserCmd > 0;
@@ -713,6 +719,23 @@ function MpgView({
       >
         START
       </button>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={onLaserTest}
+          className="rounded-sm border border-orange-900 bg-orange-700 py-2.5 text-[11px] font-bold tracking-wide text-white"
+        >
+          LASER TEST
+        </button>
+        <button
+          type="button"
+          onClick={onLaserOff}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2.5 text-[11px] font-bold tracking-wide text-white"
+        >
+          LASER OFF
+        </button>
+      </div>
     </div>
   );
 }

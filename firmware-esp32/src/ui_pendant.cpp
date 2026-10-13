@@ -327,6 +327,37 @@ static void on_start(lv_event_t *e) {
   }
 }
 
+static void on_laser_test(lv_event_t *e) {
+  (void)e;
+  if (grbl_link_online()) {
+    if (!grbl_link_laser_test((float)LASER_TEST_S)) {
+      lv_label_set_text(state_lbl, "Laser test blocked (Idle+MPG?)");
+      return;
+    }
+    laser_s_cmd = (float)LASER_TEST_S;
+    laser_s_act = laser_s_cmd;
+    refresh_telemetry();
+  } else {
+    laser_s_cmd = (float)LASER_TEST_S;
+    laser_s_act = laser_s_cmd;
+    refresh_telemetry();
+    lv_label_set_text(state_lbl, "Laser TEST  ·  demo M3");
+  }
+}
+
+static void on_laser_off(lv_event_t *e) {
+  (void)e;
+  if (grbl_link_online()) {
+    grbl_link_laser_off();
+  }
+  laser_s_cmd = 0;
+  laser_s_act = 0;
+  refresh_telemetry();
+  if (!grbl_link_online()) {
+    lv_label_set_text(state_lbl, "Laser OFF  ·  demo M5");
+  }
+}
+
 static void refresh_soft_labels() {
   const char *a = "Back";
   const char *b = "";
@@ -988,6 +1019,37 @@ void ui_pendant_create() {
   lv_obj_set_style_text_font(start_lbl, &lv_font_montserrat_20, 0);
   lv_obj_center(start_lbl);
   lv_obj_add_event_cb(start_btn, on_start, LV_EVENT_CLICKED, NULL);
+
+  // Laser test (M3 S…) / software inhibit (M5)
+  const int laser_y = step_y + 48 + 52;
+  const int laser_bw = (UI_H_RES - 12 - 6) / 2;
+  lv_obj_t *laser_test_btn = lv_btn_create(mpg_panel);
+  lv_obj_set_size(laser_test_btn, laser_bw, 44);
+  lv_obj_set_pos(laser_test_btn, 0, laser_y);
+  lv_obj_set_style_radius(laser_test_btn, 2, 0);
+  lv_obj_set_style_border_width(laser_test_btn, 1, 0);
+  lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0x9a3412), 0);
+  lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0xc2410c), 0);
+  lv_obj_set_style_text_color(laser_test_btn, lv_color_hex(0xffffff), 0);
+  lv_obj_t *lt_lbl = lv_label_create(laser_test_btn);
+  lv_label_set_text(lt_lbl, "LASER TEST");
+  lv_obj_set_style_text_font(lt_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_center(lt_lbl);
+  lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t *laser_off_btn = lv_btn_create(mpg_panel);
+  lv_obj_set_size(laser_off_btn, laser_bw, 44);
+  lv_obj_set_pos(laser_off_btn, laser_bw + 6, laser_y);
+  lv_obj_set_style_radius(laser_off_btn, 2, 0);
+  lv_obj_set_style_border_width(laser_off_btn, 1, 0);
+  lv_obj_set_style_border_color(laser_off_btn, lv_color_hex(0x111111), 0);
+  lv_obj_set_style_bg_color(laser_off_btn, lv_color_hex(0x2f2f2f), 0);
+  lv_obj_set_style_text_color(laser_off_btn, lv_color_hex(0xffffff), 0);
+  lv_obj_t *lo_lbl = lv_label_create(laser_off_btn);
+  lv_label_set_text(lo_lbl, "LASER OFF");
+  lv_obj_set_style_text_font(lo_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_center(lo_lbl);
+  lv_obj_add_event_cb(laser_off_btn, on_laser_off, LV_EVENT_CLICKED, NULL);
 
   // ----- OVERRIDE panel -----
   ov_panel = lv_obj_create(content);

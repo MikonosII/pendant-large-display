@@ -74,6 +74,11 @@
 #define SD_SPI_DUMMY_CS 8
 #endif
 
+// Laser test fire S value (grblHAL $30 scale; 50 ≈ 5% when $30=1000).
+#ifndef LASER_TEST_S
+#define LASER_TEST_S 50
+#endif
+
 // Chrome metrics (match Application/ScreenConfig.h profile 2)
 #define SCREEN_HEADER_H 56
 #define SCREEN_TABS_H 48
