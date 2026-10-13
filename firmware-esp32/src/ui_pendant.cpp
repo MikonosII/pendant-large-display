@@ -72,6 +72,9 @@ static lv_obj_t *axis_mpos[3];
 static lv_obj_t *step_btns[4];
 static lv_obj_t *soft_btns[3];
 static lv_obj_t *start_btn;
+static lv_obj_t *laser_test_btn;
+static lv_obj_t *laser_test_lbl;
+static bool laser_k_on = false;  // PSU K+ enable latched from TEST / OFF
 
 static lv_obj_t *feed_lbl;
 static lv_obj_t *laser_cmd_lbl;

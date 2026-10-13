@@ -38,6 +38,7 @@ export function PendantScreen({ profile }: Props) {
   const [step, setStep] = useState(0.1);
   const [feedRate, setFeedRate] = useState(1200);
   const [laserCmd, setLaserCmd] = useState(650);
+  const [laserKOn, setLaserKOn] = useState(false);
   const [speedOv, setSpeedOv] = useState(100);
   const [rapidOv, setRapidOv] = useState(100);
   const [powerFeed, setPowerFeed] = useState(300);
@@ -177,8 +178,9 @@ export function PendantScreen({ profile }: Props) {
                 window.setTimeout(() => setStartFlash(false), 800);
               }}
               startFlash={startFlash}
-              onLaserTest={() => setLaserCmd(1)} // armed cue — firmware uses M64→K+
-              onLaserOff={() => setLaserCmd(0)}
+              laserKOn={laserKOn}
+              onLaserTest={() => setLaserKOn(true)}
+              onLaserOff={() => setLaserKOn(false)}
             />
           )}
           {page === "OVERRIDE" && (
