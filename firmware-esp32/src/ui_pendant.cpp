@@ -1281,13 +1281,14 @@ void ui_pendant_create() {
     lv_obj_set_style_text_color(pf_laser_val, lv_color_hex(0xffffff), 0);
     lv_obj_set_pos(pf_laser_val, 4, 340);
 
-    // Bumps in tenths of a percent: −1.0, −0.1, +0.1, +1.0
-    const int lbumps[] = {-10, -1, 1, 10};
-    const char *llabs[] = {"−1%", "−0.1", "+0.1", "+1%"};
-    for (int i = 0; i < 4; i++) {
+    // Bumps in tenths of a percent: −10, −1, −0.1, +0.1, +1, +10
+    const int lbumps[] = {-100, -10, -1, 1, 10, 100};
+    const char *llabs[] = {"−10", "−1%", "−0.1", "+0.1", "+1%", "+10"};
+    int lbw6 = (UI_H_RES - 12 - 24) / 6;
+    for (int i = 0; i < 6; i++) {
       lv_obj_t *b = lv_btn_create(feed_panel);
-      lv_obj_set_size(b, bbw - 2, 40);
-      lv_obj_set_pos(b, 4 + i * bbw, 386);
+      lv_obj_set_size(b, lbw6 - 2, 40);
+      lv_obj_set_pos(b, 4 + i * lbw6, 386);
       style_chrome_btn(b, false);
       lv_obj_t *l = lv_label_create(b);
       lv_label_set_text(l, llabs[i]);

@@ -1040,12 +1040,14 @@ function FeedView({
         <div className="text-3xl font-bold tabular-nums text-white">
           {laserFeedPct.toFixed(1)}%
         </div>
-        <div className="mt-1 grid grid-cols-4 gap-1">
+        <div className="mt-1 grid grid-cols-6 gap-1">
           {[
+            { d: -10, label: "−10" },
             { d: -1, label: "−1%" },
             { d: -0.1, label: "−0.1" },
             { d: 0.1, label: "+0.1" },
             { d: 1, label: "+1%" },
+            { d: 10, label: "+10" },
           ].map(({ d, label }) => (
             <button
               key={label}
@@ -1057,7 +1059,7 @@ function FeedView({
                   ) / 10
                 )
               }
-              className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+              className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[10px] font-semibold text-white"
             >
               {label}
             </button>
