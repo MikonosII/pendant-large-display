@@ -38,9 +38,9 @@ export function LayoutLab() {
             Large Screen Lab
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
-            Preview the pendant chrome at stock 3.5″ and the forked 7″ 480×800
-            portrait layout. Touch the screen — tabs, MPG, jog, and overrides
-            are live.
+            Preview the 7″ MPG dashboard: G-code toolpath with live laser
+            cursor, WPos/MPos, feed, and laser S. Jog moves the head on the
+            path. Stock 3.5″ stays DRO-only.
           </p>
         </div>
 
