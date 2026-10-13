@@ -62,8 +62,19 @@ static bool coolant_flood = false;
 static bool coolant_mist = false;
 static float power_feed = 300.0f;  // POWER FEED jog rate mm/min
 
+// MPG live bed map (WPos head — no toolpath)
+static lv_obj_t *map_canvas;
+static lv_obj_t *map_head;
+static lv_obj_t *map_hint;
+static lv_color_t *map_cbuf = nullptr;
+static int map_w = 0, map_h = 0;
+static float map_scale = 1;
+static float map_pad = 10;
+static float bed_x_mm = 400, bed_y_mm = 300;
+
+// GCODE tab toolpath preview
 static lv_obj_t *path_canvas;
-static lv_obj_t *head_dot;
+static lv_obj_t *path_head;
 static lv_color_t *path_cbuf = nullptr;
 static int path_w = 0;
 static int path_h = 0;
@@ -119,14 +130,16 @@ static void style_chrome_btn(lv_obj_t *btn, bool active) {
   lv_obj_set_style_text_color(btn, lv_color_hex(0xffffff), 0);
 }
 
-static void map_xy(float x, float y, lv_coord_t *px, lv_coord_t *py) {
+static void path_map_xy(float x, float y, lv_coord_t *px, lv_coord_t *py) {
   // Machine Y up → canvas Y down
   *px = (lv_coord_t)((x - path_min_x) * path_scale);
   *py = (lv_coord_t)(path_h - (y - path_min_y) * path_scale);
 }
 
 static void draw_toolpath();
-static void update_head();
+static void draw_live_map();
+static void update_heads();
+static float map_ox = 0, map_oy = 0, map_used_h = 0;
 
 static bool ensure_job_path_buf() {
   if (job_path) return true;
@@ -184,7 +197,7 @@ static void apply_loaded_job() {
   if (path_w > 0 && path_h > 0) recompute_path_bounds(path_w, path_h);
   draw_toolpath();
   refresh_path_job_hint();
-  update_head();
+  update_heads();
 }
 
 static void refresh_prog_ui(void);
@@ -233,20 +246,95 @@ static void draw_toolpath() {
   if (!job_path || job_path_len < 2) return;
   for (unsigned i = 1; i < job_path_len; i++) {
     lv_point_t pts[2];
-    map_xy(job_path[i - 1].x, job_path[i - 1].y, &pts[0].x, &pts[0].y);
-    map_xy(job_path[i].x, job_path[i].y, &pts[1].x, &pts[1].y);
+    path_map_xy(job_path[i - 1].x, job_path[i - 1].y, &pts[0].x, &pts[0].y);
+    path_map_xy(job_path[i].x, job_path[i].y, &pts[1].x, &pts[1].y);
     lv_canvas_draw_line(path_canvas, pts, 2, job_path[i].cut ? &cut_dsc : &rapid_dsc);
   }
 }
 
-static void update_head() {
-  if (!head_dot || path_scale <= 0) return;
-  lv_coord_t px, py;
-  map_xy(wpos[0], wpos[1], &px, &py);
-  // Center the 12×12 marker
-  lv_obj_set_pos(head_dot, px - 6, py - 6);
-  lv_obj_set_style_bg_color(head_dot,
-                            laser_s_cmd > 0 ? lv_color_hex(0xef4444) : lv_color_hex(0x38bdf8), 0);
+static void draw_live_map() {
+  if (!map_canvas || !map_cbuf || map_w < 8 || map_h < 8) return;
+  lv_canvas_fill_bg(map_canvas, lv_color_hex(0x141414), LV_OPA_COVER);
+
+  if (bed_x_mm < 1) bed_x_mm = 1;
+  if (bed_y_mm < 1) bed_y_mm = 1;
+  const float pad = 12.0f;
+  float sx = ((float)map_w - 2 * pad) / bed_x_mm;
+  float sy = ((float)map_h - 2 * pad) / bed_y_mm;
+  map_scale = sx < sy ? sx : sy;
+
+  float used_w = bed_x_mm * map_scale;
+  float used_h = bed_y_mm * map_scale;
+  map_ox = ((float)map_w - used_w) * 0.5f;
+  map_oy = ((float)map_h - used_h) * 0.5f;
+  map_used_h = used_h;
+  map_pad = pad;
+
+  lv_draw_rect_dsc_t bed;
+  lv_draw_rect_dsc_init(&bed);
+  bed.bg_opa = LV_OPA_10;
+  bed.bg_color = lv_color_hex(0x1e293b);
+  bed.border_color = lv_color_hex(0x475569);
+  bed.border_width = 2;
+  bed.border_opa = LV_OPA_COVER;
+  lv_canvas_draw_rect(map_canvas, (lv_coord_t)map_ox, (lv_coord_t)map_oy, (lv_coord_t)used_w,
+                      (lv_coord_t)used_h, &bed);
+
+  lv_draw_line_dsc_t grid;
+  lv_draw_line_dsc_init(&grid);
+  grid.color = lv_color_hex(0x2a2a2a);
+  grid.width = 1;
+
+  float step = (bed_x_mm <= 200 || bed_y_mm <= 200) ? 25.0f : 50.0f;
+  for (float gx = 0; gx <= bed_x_mm + 0.1f; gx += step) {
+    lv_point_t pts[2];
+    pts[0].x = (lv_coord_t)(map_ox + gx * map_scale);
+    pts[0].y = (lv_coord_t)map_oy;
+    pts[1].x = pts[0].x;
+    pts[1].y = (lv_coord_t)(map_oy + used_h);
+    lv_canvas_draw_line(map_canvas, pts, 2, &grid);
+  }
+  for (float gy = 0; gy <= bed_y_mm + 0.1f; gy += step) {
+    lv_point_t pts[2];
+    pts[0].x = (lv_coord_t)map_ox;
+    pts[0].y = (lv_coord_t)(map_oy + used_h - gy * map_scale);
+    pts[1].x = (lv_coord_t)(map_ox + used_w);
+    pts[1].y = pts[0].y;
+    lv_canvas_draw_line(map_canvas, pts, 2, &grid);
+  }
+
+  lv_draw_line_dsc_t axes;
+  lv_draw_line_dsc_init(&axes);
+  axes.color = lv_color_hex(0x64748b);
+  axes.width = 2;
+  {
+    lv_point_t hx[2] = {{(lv_coord_t)map_ox, (lv_coord_t)(map_oy + used_h)},
+                        {(lv_coord_t)(map_ox + 18), (lv_coord_t)(map_oy + used_h)}};
+    lv_point_t vy[2] = {{(lv_coord_t)map_ox, (lv_coord_t)(map_oy + used_h)},
+                        {(lv_coord_t)map_ox, (lv_coord_t)(map_oy + used_h - 18)}};
+    lv_canvas_draw_line(map_canvas, hx, 2, &axes);
+    lv_canvas_draw_line(map_canvas, vy, 2, &axes);
+  }
+}
+
+static void update_heads() {
+  lv_color_t col = laser_s_cmd > 0 ? lv_color_hex(0xef4444) : lv_color_hex(0x38bdf8);
+  if (map_head && map_scale > 0) {
+    lv_coord_t px = (lv_coord_t)(map_ox + wpos[0] * map_scale);
+    lv_coord_t py = (lv_coord_t)(map_oy + map_used_h - wpos[1] * map_scale);
+    if (px < 0) px = 0;
+    if (py < 0) py = 0;
+    if (px > map_w) px = (lv_coord_t)map_w;
+    if (py > map_h) py = (lv_coord_t)map_h;
+    lv_obj_set_pos(map_head, px - 7, py - 7);
+    lv_obj_set_style_bg_color(map_head, col, 0);
+  }
+  if (path_head && path_scale > 0) {
+    lv_coord_t px, py;
+    path_map_xy(wpos[0], wpos[1], &px, &py);
+    lv_obj_set_pos(path_head, px - 6, py - 6);
+    lv_obj_set_style_bg_color(path_head, col, 0);
+  }
 }
 
 static int laser_pct(float s) {
@@ -267,7 +355,7 @@ static void refresh_telemetry() {
   lv_label_set_text(laser_act_lbl, buf);
   snprintf(buf, sizeof(buf), "Ov F%d S%d R%d", feed_ov, speed_ov, rapid_ov);
   lv_label_set_text(ov_lbl, buf);
-  update_head();
+  update_heads();
 }
 
 static void refresh_axes() {
@@ -283,7 +371,7 @@ static void refresh_axes() {
       lv_obj_set_style_border_width(axis_rows[i], 2, 0);
     }
   }
-  update_head();
+  update_heads();
 }
 
 static void refresh_steps() {
@@ -978,11 +1066,61 @@ static void on_probe_zero(lv_event_t *e) {
   }
 }
 
+static void setup_live_map(lv_obj_t *parent, int y, int w, int h) {
+  map_w = w;
+  map_h = h;
+  bed_x_mm = pendant_cfg_get()->bed_x_mm;
+  bed_y_mm = pendant_cfg_get()->bed_y_mm;
+  if (bed_x_mm < 1) bed_x_mm = MACHINE_BED_X_MM;
+  if (bed_y_mm < 1) bed_y_mm = MACHINE_BED_Y_MM;
+
+  lv_obj_t *frame = lv_obj_create(parent);
+  lv_obj_set_size(frame, w, h);
+  lv_obj_set_pos(frame, 0, y);
+  lv_obj_set_style_bg_color(frame, lv_color_hex(0x141414), 0);
+  lv_obj_set_style_border_width(frame, 1, 0);
+  lv_obj_set_style_border_color(frame, lv_color_hex(0x111111), 0);
+  lv_obj_set_style_pad_all(frame, 0, 0);
+  lv_obj_set_style_radius(frame, 2, 0);
+  lv_obj_clear_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
+
+  map_hint = lv_label_create(frame);
+  lv_obj_set_style_text_font(map_hint, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(map_hint, lv_color_hex(0x888888), 0);
+  lv_obj_set_pos(map_hint, 6, 4);
+  char hint[48];
+  snprintf(hint, sizeof(hint), "WPos map · %.0f×%.0f mm", bed_x_mm, bed_y_mm);
+  lv_label_set_text(map_hint, hint);
+
+  size_t buf_sz = LV_CANVAS_BUF_SIZE_TRUE_COLOR(w, h);
+  map_cbuf = (lv_color_t *)heap_caps_malloc(buf_sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!map_cbuf) map_cbuf = (lv_color_t *)heap_caps_malloc(buf_sz, MALLOC_CAP_8BIT);
+  if (!map_cbuf) {
+    Serial.println("[ui] map canvas alloc failed");
+    return;
+  }
+
+  map_canvas = lv_canvas_create(frame);
+  lv_obj_set_size(map_canvas, w, h);
+  lv_obj_set_pos(map_canvas, 0, 0);
+  lv_canvas_set_buffer(map_canvas, map_cbuf, w, h, LV_IMG_CF_TRUE_COLOR);
+  draw_live_map();
+
+  map_head = lv_obj_create(frame);
+  lv_obj_set_size(map_head, 14, 14);
+  lv_obj_set_style_radius(map_head, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(map_head, lv_color_hex(0x38bdf8), 0);
+  lv_obj_set_style_border_width(map_head, 2, 0);
+  lv_obj_set_style_border_color(map_head, lv_color_hex(0xffffff), 0);
+  lv_obj_clear_flag(map_head, LV_OBJ_FLAG_SCROLLABLE);
+  update_heads();
+}
+
 static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
   path_w = w;
   path_h = h;
 
-  load_sample_job();
+  if (job_path_len == 0) load_sample_job();
   recompute_path_bounds(w, h);
 
   lv_obj_t *frame = lv_obj_create(parent);
@@ -1017,20 +1155,23 @@ static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
   lv_canvas_set_buffer(path_canvas, path_cbuf, w, h, LV_IMG_CF_TRUE_COLOR);
   draw_toolpath();
 
-  head_dot = lv_obj_create(frame);
-  lv_obj_set_size(head_dot, 12, 12);
-  lv_obj_set_style_radius(head_dot, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(head_dot, lv_color_hex(0x38bdf8), 0);
-  lv_obj_set_style_border_width(head_dot, 2, 0);
-  lv_obj_set_style_border_color(head_dot, lv_color_hex(0xffffff), 0);
-  lv_obj_clear_flag(head_dot, LV_OBJ_FLAG_SCROLLABLE);
-  update_head();
+  path_head = lv_obj_create(frame);
+  lv_obj_set_size(path_head, 12, 12);
+  lv_obj_set_style_radius(path_head, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(path_head, lv_color_hex(0x38bdf8), 0);
+  lv_obj_set_style_border_width(path_head, 2, 0);
+  lv_obj_set_style_border_color(path_head, lv_color_hex(0xffffff), 0);
+  lv_obj_clear_flag(path_head, LV_OBJ_FLAG_SCROLLABLE);
+  update_heads();
 }
 
 void ui_pendant_create() {
   const pendant_cfg_t *cfg = pendant_cfg_get();
   laser_feed_pct = cfg->laser_feed_pct;
   laser_s_max = cfg->laser_s_max > 0.0f ? cfg->laser_s_max : 1000.0f;
+  bed_x_mm = cfg->bed_x_mm > 0 ? cfg->bed_x_mm : MACHINE_BED_X_MM;
+  bed_y_mm = cfg->bed_y_mm > 0 ? cfg->bed_y_mm : MACHINE_BED_Y_MM;
+  load_sample_job();
 
   scr = lv_obj_create(NULL);
   lv_obj_set_style_bg_color(scr, lv_color_hex(0x404040), 0);
@@ -1081,12 +1222,12 @@ void ui_pendant_create() {
   lv_obj_set_style_pad_all(mpg_panel, 0, 0);
   lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-  const int preview_h = 260;
-  setup_path_preview(mpg_panel, 0, UI_H_RES - 12, preview_h);
+  const int map_h_px = 200;
+  setup_live_map(mpg_panel, 0, UI_H_RES - 12, map_h_px);
 
-  // Compact 3-column DRO under the path
-  const int dro_y = preview_h + 6;
-  const int row_h = 56;
+  // Denser 3-column DRO under the live map
+  const int dro_y = map_h_px + 6;
+  const int row_h = 72;
   const int col_w = (UI_H_RES - 12 - 8) / 3;
   for (int i = 0; i < 3; i++) {
     axis_rows[i] = lv_btn_create(mpg_panel);
@@ -1097,34 +1238,34 @@ void ui_pendant_create() {
 
     lv_obj_t *name = lv_label_create(axis_rows[i]);
     lv_label_set_text(name, k_axis[i]);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(name, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(name, lv_color_hex(0xf0c040), 0);
     lv_obj_align(name, LV_ALIGN_TOP_LEFT, 4, 4);
 
     axis_wpos[i] = lv_label_create(axis_rows[i]);
-    lv_obj_set_style_text_font(axis_wpos[i], &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(axis_wpos[i], &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(axis_wpos[i], lv_color_hex(0xffffff), 0);
-    lv_obj_align(axis_wpos[i], LV_ALIGN_TOP_LEFT, 22, 4);
+    lv_obj_align(axis_wpos[i], LV_ALIGN_TOP_LEFT, 28, 4);
 
     axis_mpos[i] = lv_label_create(axis_rows[i]);
-    lv_obj_set_style_text_font(axis_mpos[i], &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(axis_mpos[i], &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(axis_mpos[i], lv_color_hex(0xa0c4e8), 0);
     lv_obj_align(axis_mpos[i], LV_ALIGN_BOTTOM_LEFT, 4, -4);
 
     lv_obj_t *zero = lv_btn_create(axis_rows[i]);
-    lv_obj_set_size(zero, 36, 22);
+    lv_obj_set_size(zero, 40, 26);
     lv_obj_align(zero, LV_ALIGN_BOTTOM_RIGHT, -2, -2);
     style_chrome_btn(zero, false);
     lv_obj_t *zl = lv_label_create(zero);
     lv_label_set_text(zl, "0");
-    lv_obj_set_style_text_font(zl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(zl, &lv_font_montserrat_14, 0);
     lv_obj_center(zl);
     lv_obj_add_event_cb(zero, on_zero, LV_EVENT_CLICKED, (void *)(intptr_t)i);
   }
 
   const int tele_y = dro_y + row_h + 6;
   lv_obj_t *tele = lv_obj_create(mpg_panel);
-  lv_obj_set_size(tele, UI_H_RES - 12, 56);
+  lv_obj_set_size(tele, UI_H_RES - 12, 64);
   lv_obj_set_pos(tele, 0, tele_y);
   lv_obj_set_style_bg_opa(tele, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(tele, 0, 0);
@@ -1138,7 +1279,7 @@ void ui_pendant_create() {
   lv_obj_add_event_cb(laser_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)1);
   make_telemetry_cell(tele, "OV", &ov_lbl);
 
-  const int step_y = tele_y + 62;
+  const int step_y = tele_y + 70;
   for (int i = 0; i < 4; i++) {
     step_btns[i] = lv_btn_create(mpg_panel);
     int bw = (UI_H_RES - 12 - 9) / 4;
@@ -1506,18 +1647,21 @@ void ui_pendant_create() {
   lv_obj_add_flag(gcode_panel, LV_OBJ_FLAG_HIDDEN);
 
   {
+    const int path_prev_h = 140;
+    setup_path_preview(gcode_panel, 0, UI_H_RES - 12, path_prev_h);
+
     lv_obj_t *cap = lv_label_create(gcode_panel);
     lv_label_set_text(cap, "GCODE / JOBS");
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(cap, lv_color_hex(0xaaaaaa), 0);
-    lv_obj_set_pos(cap, 4, 4);
+    lv_obj_set_pos(cap, 4, path_prev_h + 4);
 
     gcode_status_lbl = lv_label_create(gcode_panel);
     lv_obj_set_style_text_font(gcode_status_lbl, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(gcode_status_lbl, lv_color_hex(0xdddddd), 0);
     lv_label_set_long_mode(gcode_status_lbl, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(gcode_status_lbl, UI_H_RES - 28);
-    lv_obj_set_pos(gcode_status_lbl, 4, 28);
+    lv_obj_set_pos(gcode_status_lbl, 4, path_prev_h + 24);
     lv_label_set_text(gcode_status_lbl, "");
 
     const int btn_h = 52;
@@ -1569,9 +1713,10 @@ void ui_pendant_create() {
     lv_obj_set_pos(gcode_prog_lbl, 4, btn_y + btn_h + 6);
     lv_label_set_text(gcode_prog_lbl, "Ready");
 
+    const int list_y = path_prev_h + 48;
     gcode_list = lv_obj_create(gcode_panel);
-    lv_obj_set_size(gcode_list, UI_H_RES - 20, btn_y - 64);
-    lv_obj_set_pos(gcode_list, 0, 56);
+    lv_obj_set_size(gcode_list, UI_H_RES - 20, btn_y - list_y - 4);
+    lv_obj_set_pos(gcode_list, 0, list_y);
     lv_obj_set_style_bg_color(gcode_list, lv_color_hex(0x2a2a2a), 0);
     lv_obj_set_style_border_width(gcode_list, 1, 0);
     lv_obj_set_style_border_color(gcode_list, lv_color_hex(0x111111), 0);

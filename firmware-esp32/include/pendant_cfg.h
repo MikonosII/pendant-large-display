@@ -23,6 +23,9 @@ typedef struct {
   float laser_feed_pct;
   float laser_s_max;
 
+  float bed_x_mm;  // work envelope for MPG live map
+  float bed_y_mm;
+
   int handwheel_a;
   int handwheel_b;
   int handwheel_ppr;

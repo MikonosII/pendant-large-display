@@ -34,6 +34,14 @@
 #define LASER_S_MAX 1000.0f
 #endif
 
+// Work envelope (mm) for the MPG live WPos map
+#ifndef MACHINE_BED_X_MM
+#define MACHINE_BED_X_MM 400.0f
+#endif
+#ifndef MACHINE_BED_Y_MM
+#define MACHINE_BED_Y_MM 300.0f
+#endif
+
 #ifndef HANDWHEEL_A_GPIO
 #define HANDWHEEL_A_GPIO -1
 #endif

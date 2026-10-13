@@ -164,8 +164,6 @@ export function PendantScreen({ profile }: Props) {
               feedOv={feedOverride}
               speedOv={speedOv}
               rapidOv={rapidOv}
-              path={job.path}
-              jobName={job.name}
               roomy={profile.logicalW >= 480}
               onSelectAxis={setActiveAxis}
               onStep={setStep}
@@ -221,10 +219,14 @@ export function PendantScreen({ profile }: Props) {
           {page === "GCODE" && (
             <GcodeView
               name={job.name}
+              path={job.path}
               segCount={job.path.length}
               warnings={job.warnings}
               lfsOk={lfsOk}
               sdOk={sdOk}
+              headX={axes[0].wpos}
+              headY={axes[1].wpos}
+              laserOn={laserCmd > 0}
               onLoad={(name, nc) => {
                 const { path, warnings } = parseGcodeToolpath(nc);
                 setJob({ name, path, warnings, source: nc });
@@ -468,18 +470,116 @@ function SoftBtn({
   );
 }
 
+function MachineMap({
+  x,
+  y,
+  laserOn,
+  bedX = 400,
+  bedY = 300,
+}: {
+  x: number;
+  y: number;
+  laserOn: boolean;
+  bedX?: number;
+  bedY?: number;
+}) {
+  const pad = 8;
+  const vb = `${-pad} ${-pad} ${bedX + pad * 2} ${bedY + pad * 2}`;
+  const step = bedX <= 200 || bedY <= 200 ? 25 : 50;
+  const gridV: number[] = [];
+  const gridH: number[] = [];
+  for (let gx = 0; gx <= bedX; gx += step) gridV.push(gx);
+  for (let gy = 0; gy <= bedY; gy += step) gridH.push(gy);
+  const hx = Math.min(bedX, Math.max(0, x));
+  const hy = Math.min(bedY, Math.max(0, y));
+
+  return (
+    <div className="relative h-[200px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
+      <div className="absolute left-1.5 top-1 z-10 text-[10px] text-zinc-400">
+        WPos map · {bedX}×{bedY} mm
+      </div>
+      <svg
+        viewBox={vb}
+        className="h-full w-full"
+        preserveAspectRatio="xMidYMid meet"
+        style={{ transform: "scaleY(-1)" }}
+      >
+        <rect
+          x={0}
+          y={0}
+          width={bedX}
+          height={bedY}
+          fill="#1e293b18"
+          stroke="#475569"
+          strokeWidth={1.2}
+        />
+        {gridV.map((gx) => (
+          <line
+            key={`v${gx}`}
+            x1={gx}
+            y1={0}
+            x2={gx}
+            y2={bedY}
+            stroke="#2a2a2a"
+            strokeWidth={0.4}
+          />
+        ))}
+        {gridH.map((gy) => (
+          <line
+            key={`h${gy}`}
+            x1={0}
+            y1={gy}
+            x2={bedX}
+            y2={gy}
+            stroke="#2a2a2a"
+            strokeWidth={0.4}
+          />
+        ))}
+        <line x1={0} y1={0} x2={18} y2={0} stroke="#64748b" strokeWidth={1.2} />
+        <line x1={0} y1={0} x2={0} y2={18} stroke="#64748b" strokeWidth={1.2} />
+        <circle
+          cx={hx}
+          cy={hy}
+          r={4}
+          fill={laserOn ? "#ef4444" : "#38bdf8"}
+          stroke="#fff"
+          strokeWidth={0.8}
+        />
+        <line
+          x1={hx - 7}
+          y1={hy}
+          x2={hx + 7}
+          y2={hy}
+          stroke="#fff"
+          strokeWidth={0.5}
+        />
+        <line
+          x1={hx}
+          y1={hy - 7}
+          x2={hx}
+          y2={hy + 7}
+          stroke="#fff"
+          strokeWidth={0.5}
+        />
+      </svg>
+    </div>
+  );
+}
+
 function ToolpathPreview({
   x,
   y,
   laserOn,
   path,
   jobName,
+  compact,
 }: {
   x: number;
   y: number;
   laserOn: boolean;
   path: PathSeg[];
   jobName: string;
+  compact?: boolean;
 }) {
   const bounds = toolpathBounds(path);
   const vb = `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`;
@@ -500,7 +600,12 @@ function ToolpathPreview({
   }
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden rounded-sm border border-[#111] bg-[#1a1a1a]">
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-sm border border-[#111] bg-[#1a1a1a]",
+        compact ? "h-[140px] shrink-0" : "min-h-0 flex-1",
+      )}
+    >
       <div className="absolute left-1.5 top-1 z-10 max-w-[90%] truncate text-[8px] uppercase tracking-wider text-zinc-500">
         Job · {jobName}
       </div>
@@ -523,7 +628,6 @@ function ToolpathPreview({
           stroke="#f59e0b"
           strokeWidth={0.9}
         />
-        {/* Laser head */}
         <g>
           <circle
             cx={x}
@@ -565,8 +669,6 @@ function MpgView({
   feedOv,
   speedOv,
   rapidOv,
-  path,
-  jobName,
   roomy,
   onSelectAxis,
   onStep,
@@ -586,8 +688,6 @@ function MpgView({
   feedOv: number;
   speedOv: number;
   rapidOv: number;
-  path: PathSeg[];
-  jobName: string;
   roomy: boolean;
   onSelectAxis: (i: number) => void;
   onStep: (s: number) => void;
@@ -604,12 +704,10 @@ function MpgView({
   return (
     <div className="flex h-full flex-col gap-1">
       {roomy && (
-        <ToolpathPreview
+        <MachineMap
           x={axes[0].wpos}
           y={axes[1].wpos}
           laserOn={laserOn}
-          path={path}
-          jobName={jobName}
         />
       )}
 
@@ -627,7 +725,7 @@ function MpgView({
             onClick={() => onSelectAxis(i)}
             className={cn(
               "flex items-center gap-1.5 rounded-sm border px-1.5 text-left transition-colors",
-              roomy ? "py-1.5" : "py-2",
+              roomy ? "py-2.5" : "py-2",
               i === activeAxis
                 ? "border-amber-400 bg-[#1f1f1f]"
                 : "border-[#222] bg-[#333]"
@@ -636,7 +734,7 @@ function MpgView({
             <span
               className={cn(
                 "shrink-0 font-bold text-amber-300",
-                roomy ? "text-sm" : "text-base"
+                roomy ? "text-base" : "text-base"
               )}
             >
               {axis.name}
@@ -645,13 +743,13 @@ function MpgView({
               <div
                 className={cn(
                   "tabular-nums text-white",
-                  roomy ? "text-sm" : "text-lg"
+                  roomy ? "text-base" : "text-lg"
                 )}
               >
                 {axis.wpos.toFixed(3)}
               </div>
               {roomy && (
-                <div className="text-[9px] tabular-nums text-sky-300/90">
+                <div className="text-[11px] tabular-nums text-sky-300/90">
                   M {(axis.wpos + axis.wco).toFixed(3)}
                 </div>
               )}
@@ -1102,18 +1200,26 @@ function FeedView({
 
 function GcodeView({
   name,
+  path,
   segCount,
   warnings,
   lfsOk,
   sdOk,
+  headX,
+  headY,
+  laserOn,
   onLoad,
   onReloadSample,
 }: {
   name: string;
+  path: PathSeg[];
   segCount: number;
   warnings: string[];
   lfsOk: boolean;
   sdOk: boolean;
+  headX: number;
+  headY: number;
+  laserOn: boolean;
   onLoad: (name: string, nc: string) => void;
   onReloadSample: () => void;
 }) {
@@ -1150,7 +1256,15 @@ function GcodeView({
           : "Ready · lab mock";
 
   return (
-    <div className="flex h-full flex-col gap-2 px-2 py-3 text-zinc-200">
+    <div className="flex h-full flex-col gap-2 px-2 py-2 text-zinc-200">
+      <ToolpathPreview
+        x={headX}
+        y={headY}
+        laserOn={laserOn}
+        path={path}
+        jobName={name}
+        compact
+      />
       <div>
         <div className="text-[10px] uppercase tracking-widest text-zinc-400">
           G-code / jobs

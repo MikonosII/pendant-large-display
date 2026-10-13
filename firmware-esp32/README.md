@@ -43,7 +43,8 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 * SmartPendant-style chrome: header tabs, DRO, step sizes, MPG toggle, soft buttons
 * **Plain ASCII UART ↔ grblHAL** on CrowPanel **UART1-OUT** (status, MPG claim, jog, hold, zero)
 * Offline demo jog/telemetry when no controller answers (status bar shows `Offline · demo`)
-* **G-code toolpath preview** — parses embedded `jobs/sample-badge.nc` (G0/G1/G2/G3, M3/M4/M5, S) into the MPG canvas
+* **MPG live WPos map** — work envelope (`machine.bed_x` / `machine.bed_y` in settings.cfg) + head marker; denser DRO
+* **GCODE toolpath preview** — path canvas for jobs you load/RUN from the pendant (not from LightBurn)
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
 * **MPG START** — green confirm button sends cycle start (`~`) so a job already on the controller can be released from the pendant
 * **LASER TEST** (MPG) — toggle K+ enable only (`M64`/`M65`). Lights when armed.
@@ -75,6 +76,7 @@ uart.baud 115200
 | `board` | Built-in profile: `crowpanel-advance-5` or `crowpanel-advance-7` |
 | `laser.enable_dout` | grblHAL dout `n` for K+ (`M64 Pn` / `M65 Pn`) |
 | `laser.feed_pct` / `laser.s_max` | FEED default % and `$30` scale |
+| `machine.bed_x` / `machine.bed_y` | MPG live map work envelope (mm) |
 | `uart.tx` / `rx` / `baud` | CrowPanel UART1-OUT → controller |
 | `handwheel.*` / `i2c_mpg.*` / `sd.*` | Optional wheel / expander / TF pins |
 

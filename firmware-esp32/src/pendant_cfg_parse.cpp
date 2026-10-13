@@ -18,6 +18,8 @@
 #define LASER_ENABLE_DOUT 0
 #define LASER_FEED_PCT 5.0f
 #define LASER_S_MAX 1000.0f
+#define MACHINE_BED_X_MM 400.0f
+#define MACHINE_BED_Y_MM 300.0f
 #define HANDWHEEL_A_GPIO -1
 #define HANDWHEEL_B_GPIO -1
 #define HANDWHEEL_PPR 100
@@ -48,6 +50,9 @@ void pendant_cfg_set_defaults(pendant_cfg_t *c) {
   c->laser_feed_pct = LASER_FEED_PCT;
   c->laser_s_max = LASER_S_MAX;
 
+  c->bed_x_mm = MACHINE_BED_X_MM;
+  c->bed_y_mm = MACHINE_BED_Y_MM;
+
   c->handwheel_a = HANDWHEEL_A_GPIO;
   c->handwheel_b = HANDWHEEL_B_GPIO;
   c->handwheel_ppr = HANDWHEEL_PPR;
@@ -72,6 +77,8 @@ static const char *kBoardCrowpanel5 =
     "laser.enable_dout 0\n"
     "laser.feed_pct 5.0\n"
     "laser.s_max 1000\n"
+    "machine.bed_x 400\n"
+    "machine.bed_y 300\n"
     "handwheel.a -1\n"
     "handwheel.b -1\n"
     "handwheel.ppr 100\n"
@@ -93,6 +100,8 @@ static const char *kBoardCrowpanel7 =
     "laser.enable_dout 0\n"
     "laser.feed_pct 5.0\n"
     "laser.s_max 1000\n"
+    "machine.bed_x 400\n"
+    "machine.bed_y 300\n"
     "handwheel.a -1\n"
     "handwheel.b -1\n"
     "handwheel.ppr 100\n"
@@ -187,6 +196,12 @@ int pendant_cfg_parse_text(pendant_cfg_t *cfg, const char *text) {
       applied++;
     } else if (!strcasecmp(key, "laser.s_max") && parse_float(val, &fv)) {
       cfg->laser_s_max = fv;
+      applied++;
+    } else if (!strcasecmp(key, "machine.bed_x") && parse_float(val, &fv)) {
+      cfg->bed_x_mm = fv;
+      applied++;
+    } else if (!strcasecmp(key, "machine.bed_y") && parse_float(val, &fv)) {
+      cfg->bed_y_mm = fv;
       applied++;
     } else if (!strcasecmp(key, "handwheel.a") && parse_int(val, &iv)) {
       cfg->handwheel_a = iv;
