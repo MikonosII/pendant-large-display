@@ -28,9 +28,9 @@ export function LayoutLab() {
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
             Preview CrowPanel Advance MPG (5″ default, 7″ kept): live map,
-            macros, laser test, overrides, probe, jobs. Stock 3.5″/4.0″ keep
-            the original DRO + steps layout; settings and other tabs stay
-            shared.
+            laser test, overrides, probe, jobs. Stock 3.5″/4.0″ keep DRO +
+            steps chrome with a compact 2×4 macro grid; settings and other
+            tabs stay shared.
           </p>
         </div>
 

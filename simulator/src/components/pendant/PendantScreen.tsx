@@ -132,9 +132,10 @@ export function PendantScreen({ profile }: Props) {
       <div className="flex min-w-0 flex-1 flex-col justify-center px-2 py-1">
         <div className="text-[13px] font-bold leading-none text-white">Idle</div>
         <div className="mt-0.5 truncate text-[9px] text-zinc-200">
-          {roomy
-            ? statusHint || `Laser · mm · ${profile.shortName}`
-            : `WPos · mm · ${profile.shortName}`}
+          {statusHint ||
+            (roomy
+              ? `Laser · mm · ${profile.shortName}`
+              : `WPos · mm · ${profile.shortName}`)}
         </div>
       </div>
       <button
@@ -816,7 +817,12 @@ function MpgView({
   }, []);
 
   return (
-    <div className="flex h-full flex-col gap-1">
+    <div
+      className={cn(
+        "flex h-full flex-col",
+        roomy ? "gap-1" : "gap-0.5 overflow-hidden"
+      )}
+    >
       {roomy && (
         <div className="min-h-0 flex-1">
           <MachineMap
@@ -836,7 +842,7 @@ function MpgView({
       <div
         className={cn(
           "shrink-0",
-          roomy ? "grid grid-cols-3 gap-1" : "flex flex-col gap-1"
+          roomy ? "grid grid-cols-3 gap-1" : "flex flex-col gap-0.5"
         )}
       >
         {axes.map((axis, i) => (
@@ -846,20 +852,25 @@ function MpgView({
             onClick={() => onSelectAxis(i)}
             className={cn(
               "flex items-center gap-1.5 rounded-sm border px-1.5 text-left transition-colors",
-              roomy ? "py-2.5" : "py-2",
+              roomy ? "py-2.5" : "py-1.5",
               i === activeAxis
                 ? "border-amber-400 bg-[#1f1f1f]"
                 : "border-[#222] bg-[#333]"
             )}
           >
-            <span className="shrink-0 text-base font-bold text-amber-300">
+            <span
+              className={cn(
+                "shrink-0 font-bold text-amber-300",
+                roomy ? "text-base" : "text-sm"
+              )}
+            >
               {axis.name}
             </span>
             <div className="min-w-0 flex-1">
               <div
                 className={cn(
                   "tabular-nums text-white",
-                  roomy ? "text-base" : "text-lg"
+                  roomy ? "text-base" : "text-base"
                 )}
               >
                 {axis.wpos.toFixed(3)}
@@ -907,86 +918,85 @@ function MpgView({
         </div>
       )}
 
-      {/* Stock 3.5″/4.0″: DRO + steps only. Advance: laser + macros + steps. */}
+      {/* Bottom chrome: Advance adds LASER TEST; all profiles get 2×4 macros + steps */}
       <div className="mt-auto shrink-0 space-y-1">
         {roomy && (
-          <>
-            <button
-              type="button"
-              onClick={onLaserTest}
-              className={cn(
-                "w-full rounded-sm border py-3.5 text-sm font-bold tracking-wide text-white transition-colors",
-                laserKOn
-                  ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
-                  : "border-orange-950 bg-orange-950/80"
-              )}
-            >
-              {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
-            </button>
-
-            <div className="grid grid-cols-4 gap-1.5">
-              {macros.map((m, idx) => {
-                const teaching = teachSlot === idx;
-                const taught = !!m.gcode;
-                return (
-                  <button
-                    key={`${m.name}-${idx}`}
-                    type="button"
-                    className={cn(
-                      "rounded-sm border py-3.5 text-sm font-semibold text-zinc-100 select-none",
-                      teaching
-                        ? "border-amber-400 bg-amber-700"
-                        : taught
-                          ? "border-sky-700 bg-[#2a3a4a]"
-                          : "border-[#222] bg-[#2a2a2a]"
-                    )}
-                    title={
-                      teaching
-                        ? "Tap again to save WPos"
-                        : taught
-                          ? m.gcode
-                          : "Long-press to teach · names from /macros.cfg"
-                    }
-                    onPointerDown={() => {
-                      ignoreClick.current = false;
-                      if (longTimer.current) clearTimeout(longTimer.current);
-                      longTimer.current = setTimeout(() => {
-                        ignoreClick.current = true;
-                        onMacroTeach(idx);
-                      }, 550);
-                    }}
-                    onPointerUp={() => {
-                      if (longTimer.current) {
-                        clearTimeout(longTimer.current);
-                        longTimer.current = null;
-                      }
-                    }}
-                    onPointerLeave={() => {
-                      if (longTimer.current) {
-                        clearTimeout(longTimer.current);
-                        longTimer.current = null;
-                      }
-                    }}
-                    onClick={() => {
-                      if (ignoreClick.current) {
-                        ignoreClick.current = false;
-                        return;
-                      }
-                      if (teachSlot >= 0) {
-                        if (teachSlot === idx) onMacroCapture(idx);
-                        else onMacroCancel();
-                        return;
-                      }
-                      onMacroRun(idx);
-                    }}
-                  >
-                    {m.name}
-                  </button>
-                );
-              })}
-            </div>
-          </>
+          <button
+            type="button"
+            onClick={onLaserTest}
+            className={cn(
+              "w-full rounded-sm border py-3.5 text-sm font-bold tracking-wide text-white transition-colors",
+              laserKOn
+                ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
+                : "border-orange-950 bg-orange-950/80"
+            )}
+          >
+            {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
+          </button>
         )}
+
+        <div className={cn("grid grid-cols-4", roomy ? "gap-1.5" : "gap-1")}>
+          {macros.map((m, idx) => {
+            const teaching = teachSlot === idx;
+            const taught = !!m.gcode;
+            return (
+              <button
+                key={`${m.name}-${idx}`}
+                type="button"
+                className={cn(
+                  "rounded-sm border font-semibold text-zinc-100 select-none",
+                  roomy ? "py-3.5 text-sm" : "py-1.5 text-[10px]",
+                  teaching
+                    ? "border-amber-400 bg-amber-700"
+                    : taught
+                      ? "border-sky-700 bg-[#2a3a4a]"
+                      : "border-[#222] bg-[#2a2a2a]"
+                )}
+                title={
+                  teaching
+                    ? "Tap again to save WPos"
+                    : taught
+                      ? m.gcode
+                      : "Long-press to teach · names from /macros.cfg"
+                }
+                onPointerDown={() => {
+                  ignoreClick.current = false;
+                  if (longTimer.current) clearTimeout(longTimer.current);
+                  longTimer.current = setTimeout(() => {
+                    ignoreClick.current = true;
+                    onMacroTeach(idx);
+                  }, 550);
+                }}
+                onPointerUp={() => {
+                  if (longTimer.current) {
+                    clearTimeout(longTimer.current);
+                    longTimer.current = null;
+                  }
+                }}
+                onPointerLeave={() => {
+                  if (longTimer.current) {
+                    clearTimeout(longTimer.current);
+                    longTimer.current = null;
+                  }
+                }}
+                onClick={() => {
+                  if (ignoreClick.current) {
+                    ignoreClick.current = false;
+                    return;
+                  }
+                  if (teachSlot >= 0) {
+                    if (teachSlot === idx) onMacroCapture(idx);
+                    else onMacroCancel();
+                    return;
+                  }
+                  onMacroRun(idx);
+                }}
+              >
+                {m.name}
+              </button>
+            );
+          })}
+        </div>
         <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
           Step (mm)
         </div>
@@ -998,9 +1008,7 @@ function MpgView({
               onClick={() => onStep(s)}
               className={cn(
                 "rounded-sm border font-semibold",
-                roomy
-                  ? "py-3.5 text-sm"
-                  : "py-2 text-[11px]",
+                roomy ? "py-3.5 text-sm" : "py-1.5 text-[11px]",
                 step === s
                   ? "border-sky-400 bg-sky-700 text-white"
                   : "border-[#222] bg-[#2f2f2f] text-zinc-200"
