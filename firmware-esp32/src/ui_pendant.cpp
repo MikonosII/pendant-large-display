@@ -1325,12 +1325,15 @@ void ui_pendant_create() {
   lv_obj_set_style_pad_all(mpg_panel, 0, 0);
   lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Steps sit just above the global Hold / ±Jog soft row; macros just above steps
+  // Steps sit just above the global Hold / ±Jog soft row; two macro rows above steps
   const int step_h = 44;
-  const int macro_h = 48;
+  const int macro_h = 44;
+  const int macro_rows = (MACRO_MAX + MACRO_COLS - 1) / MACRO_COLS;
+  const int macro_gap = 3;
   const int step_y = (content_h - 8) - step_h;
-  const int macro_y = step_y - macro_h - 4;
-  const int map_h_px = 255;
+  const int macro_block_h = macro_rows * macro_h + (macro_rows - 1) * macro_gap;
+  const int macro_y0 = step_y - macro_block_h - 4;
+  const int map_h_px = 240;
   setup_live_map(mpg_panel, 0, UI_H_RES - 12, map_h_px);
 
   // Denser 3-column DRO under the live map
@@ -1416,14 +1419,17 @@ void ui_pendant_create() {
   lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
   refresh_laser_enable_ui();
 
-  // Soft macros from /macros.cfg — long-press to teach WPos, tap to run
+  // Soft macros from /macros.cfg — long-press to teach WPos, tap to run (2×4)
   {
-    int mbw = (UI_H_RES - 12 - 9) / MACRO_MAX;
+    int mbw = (UI_H_RES - 12 - (MACRO_COLS - 1) * 3) / MACRO_COLS;
     for (unsigned i = 0; i < MACRO_MAX; i++) {
+      unsigned row = i / MACRO_COLS;
+      unsigned col = i % MACRO_COLS;
       const macro_t *m = macros_get(i);
       macro_btns[i] = lv_btn_create(mpg_panel);
       lv_obj_set_size(macro_btns[i], mbw, macro_h);
-      lv_obj_set_pos(macro_btns[i], (int)i * (mbw + 3), macro_y);
+      lv_obj_set_pos(macro_btns[i], (int)col * (mbw + 3),
+                     macro_y0 + (int)row * (macro_h + macro_gap));
       lv_obj_t *lbl = lv_label_create(macro_btns[i]);
       lv_label_set_text(lbl, m ? m->name : "?");
       lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);

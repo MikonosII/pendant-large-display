@@ -15,11 +15,16 @@ static const char *kDefaultMacros =
     "# Teach a position on the pendant: long-press button → jog → tap again.\n"
     "# That writes G90 G0 X… Y… Z… on the right. Or type g-code by hand.\n"
     "# Prefer SD:/macros.cfg (wins over LittleFS).\n"
+    "# Eight slots (two rows of four on MPG).\n"
     "\n"
     "XY0 =\n"
     "Park =\n"
     "Corner =\n"
-    "Focus =\n";
+    "Focus =\n"
+    "M5 =\n"
+    "M6 =\n"
+    "M7 =\n"
+    "M8 =\n";
 
 static macro_t g_macros[MACRO_MAX];
 static unsigned g_count = 0;

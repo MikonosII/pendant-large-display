@@ -21,6 +21,10 @@ const INITIAL_MACROS: MacroSlot[] = [
   { name: "Park", gcode: "" },
   { name: "Corner", gcode: "" },
   { name: "Focus", gcode: "" },
+  { name: "M5", gcode: "" },
+  { name: "M6", gcode: "" },
+  { name: "M7", gcode: "" },
+  { name: "M8", gcode: "" },
 ];
 
 function parseGoto(gcode: string): { x?: number; y?: number; z?: number } | null {
@@ -572,7 +576,7 @@ function MachineMap({
   const hy = Math.min(bedY, Math.max(0, y));
 
   return (
-    <div className="relative h-[255px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
+    <div className="relative h-[240px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
       <div className="absolute left-1.5 top-1 z-10 text-[10px] text-zinc-400">
         WPos map · {bedX}×{bedY} mm
       </div>
@@ -918,7 +922,7 @@ function MpgView({
                 key={`${m.name}-${idx}`}
                 type="button"
                 className={cn(
-                  "rounded-sm border py-2.5 text-[11px] font-semibold text-zinc-100 select-none",
+                  "rounded-sm border py-2 text-[11px] font-semibold text-zinc-100 select-none",
                   teaching
                     ? "border-amber-400 bg-amber-700"
                     : taught

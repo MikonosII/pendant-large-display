@@ -9,7 +9,10 @@ extern "C" {
 #endif
 
 #ifndef MACRO_MAX
-#define MACRO_MAX 4
+#define MACRO_MAX 8
+#endif
+#ifndef MACRO_COLS
+#define MACRO_COLS 4
 #endif
 #ifndef MACRO_NAME_LEN
 #define MACRO_NAME_LEN 14

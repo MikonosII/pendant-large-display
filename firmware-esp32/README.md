@@ -44,7 +44,7 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 * **Plain ASCII UART ↔ grblHAL** on CrowPanel **UART1-OUT** (status, MPG claim, jog, hold, zero)
 * Offline demo jog/telemetry when no controller answers (status bar shows `Offline · demo`)
 * **MPG live WPos map** — work envelope (`machine.bed_x` / `machine.bed_y` in settings.cfg) + head marker; denser DRO
-* **Soft macros** — up to 4 buttons from **`/macros.cfg`** on SD (preferred) or LittleFS (`Name = g-code`). Edit the file, reboot — no rebuild.
+* **Soft macros** — 8 buttons (2×4) from **`/macros.cfg`** on SD (preferred) or LittleFS (`Name = g-code`). Edit names in the file, reboot — no rebuild.
 * **GCODE toolpath preview** — path canvas for jobs you load/RUN from the pendant (not from LightBurn)
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
 * **MPG START** — green confirm button sends cycle start (`~`) so a job already on the controller can be released from the pendant
@@ -135,9 +135,13 @@ XY0 =
 Park =
 Corner =
 Focus =
+M5 =
+M6 =
+M7 =
+M8 =
 ```
 
-Template: [`data/macros.cfg`](data/macros.cfg).
+Rename any slot (left of `=`) — the second row defaults to `M5`–`M8` as spare teachable positions. Template: [`data/macros.cfg`](data/macros.cfg).
 
 **Positions** — on the MPG page:
 
