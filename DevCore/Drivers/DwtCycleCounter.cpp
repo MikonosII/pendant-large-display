@@ -1,0 +1,65 @@
+// *****************************************************************************
+// @file DwtCycleCounter.cpp
+// @author Nicolai Shlapunov
+//
+// @details DevCore: Cortex DWT Cycle counter driver, header
+//
+// @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
+//            All rights reserved.
+//
+// @section SUPPORT
+//
+//  Devtronic invests time and resources providing this open source code,
+//  please support Devtronic and open-source hardware/software by
+//  donations and/or purchasing products from Devtronic.
+//
+// *****************************************************************************
+
+// *****************************************************************************
+// ***   Includes   ************************************************************
+// *****************************************************************************
+
+#include "DwtCycleCounter.h"
+
+#if defined(HAL_RCC_MODULE_ENABLED) && defined(CoreDebug) && defined(DWT) && defined(DWT_CTRL_CYCCNTENA_Msk) && defined(CoreDebug_DEMCR_TRCENA_Msk)
+
+// *****************************************************************************
+// ***   Init   ****************************************************************
+// *****************************************************************************
+Result DwtCycleCounter::Init()
+{
+  Result result = Result::RESULT_OK;
+
+  // Disable TRC
+  CoreDebug->DEMCR &= ~CoreDebug_DEMCR_TRCENA_Msk; // ~0x01000000;
+  // Enable TRC
+  CoreDebug->DEMCR |=  CoreDebug_DEMCR_TRCENA_Msk; // 0x01000000;
+#if defined(__CM7_REV) || defined(__CORTEX_M7)
+  // Unlock DWT registers
+  DWT->LAR = 0xC5ACCE55U;
+#endif
+  // Disable clock cycle counter
+  DWT->CTRL &= ~DWT_CTRL_CYCCNTENA_Msk; //~0x00000001;
+  // Enable clock cycle counter
+  DWT->CTRL |=  DWT_CTRL_CYCCNTENA_Msk; //0x00000001;
+  // Reset the clock cycle counter value
+  DWT->CYCCNT = 0u;
+  // Check if counting is enabled. We do it not only to check it, but 
+  // also to increase clock counter for next check.
+  if(DWT->CTRL | DWT_CTRL_CYCCNTENA_Msk)
+  {
+    // Check if clock cycle counter has started
+    if(DWT->CYCCNT == 0)
+    {
+        result = Result::ERR_CANNOT_EXECUTE; // Counter did not counted cycles for some reason
+    }
+  }
+  else
+  {
+    result = Result::ERR_CANNOT_EXECUTE; // CYCCNTENA bit disabled - counting can't start
+  }
+
+  return result;
+}
+
+#endif

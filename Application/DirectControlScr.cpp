@@ -1,0 +1,733 @@
+//******************************************************************************
+//  @file DirectControlScr.cpp
+//  @author Nicolai Shlapunov
+//
+//  @details DirectControlScr: User DirectControlScr Class, implementation
+//
+//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
+//             All rights reserved.
+//
+//  @section SUPPORT
+//
+//   Devtronic invests time and resources providing this open source code,
+//   please support Devtronic and open-source hardware/software by
+//   donations and/or purchasing products from Devtronic.
+//
+//******************************************************************************
+
+// *****************************************************************************
+// ***   Includes   ************************************************************
+// *****************************************************************************
+#include "DirectControlScr.h"
+
+#include "Application.h"
+
+// *****************************************************************************
+// ***   Get Instance   ********************************************************
+// *****************************************************************************
+DirectControlScr& DirectControlScr::GetInstance()
+{
+  static DirectControlScr directcontrolscr;
+  return directcontrolscr;
+}
+
+// *****************************************************************************
+// ***   DirectControlScr Setup   **********************************************
+// *****************************************************************************
+Result DirectControlScr::Setup(int32_t y, int32_t height)
+{
+  // Get crystal frequency. PLL configured in such way, that input frequency
+  // divided to be 1 MHz. So, divider is equal to actual crystal frequency.
+  uint32_t crystal_freq = ((RCC->PLLCFGR & RCC_PLLCFGR_PLLM_Msk) >> RCC_PLLCFGR_PLLM_Pos);
+
+  int32_t start_y = y + BORDER_W;
+  // Data window height
+  uint32_t window_height = (height - Font_8x12::GetInstance().GetCharH() - BORDER_W) / (grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)) + 2) - BORDER_W*2;
+  // Check if windows is too large
+  if(window_height > Font_8x12::GetInstance().GetCharH() * 5u) window_height = Font_8x12::GetInstance().GetCharH() * 5u;
+
+  // Fill all windows
+  for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)); i++)
+  {
+    // Axis position
+    dw[i].SetParams(display_drv.GetScreenW() / 6, start_y + (window_height + BORDER_W*2) * i, (display_drv.GetScreenW() - BORDER_W*2) * 4 / 6,  window_height, 8u, grbl_comm.GetReportUnitsPrecision(i));
+    dw[i].SetBorder(BORDER_W, COLOR_RED);
+    dw[i].SetDataFont(Font_8x12::GetInstance(), 2u);
+    dw[i].SetNumber(0);
+    dw[i].SetUnits(grbl_comm.GetReportUnits(i), DataWindow::RIGHT);
+    dw[i].SetCallback(AppTask::GetCurrent());
+    dw[i].SetActive(true);
+    axis_names[i].SetParams(grbl_comm.GetAxisName(i), 0, 0, COLOR_WHITE, Font_12x16::GetInstance());
+    axis_names[i].SetScale(2u);
+    axis_names[i].Move((dw[i].GetStartX() / 2) - (axis_names[i].GetWidth() / 2), (dw[i].GetStartY() + dw[i].GetHeight() / 2) - (axis_names[i].GetHeight() / 2));
+    // Set/Zero button
+    zero_btn[i].SetParams("<0>", dw[i].GetEndX() + BORDER_W, dw[i].GetStartY(), display_drv.GetScreenW() - dw[i].GetEndX() - BORDER_W * 2, dw[i].GetHeight(), true);
+    zero_btn[i].SetCallback(AppTask::GetCurrent());
+  }
+  // Scale buttons
+  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
+  {
+    // Calculate scale button width
+    uint32_t scale_btn_w = (display_drv.GetScreenW() - BORDER_W * (NumberOf(scale_btn) + 1u)) / NumberOf(scale_btn);
+    // Set scale button parameters
+    scale_btn[i].SetParams(scale_str[i], BORDER_W + i * (scale_btn_w + BORDER_W), dw[grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)) - 1u].GetEndY() + BORDER_W*2, scale_btn_w, window_height, true);
+    scale_btn[i].SetCallback(AppTask::GetCurrent());
+    scale_btn[i].SetSpacing(3u);
+    scale_btn[i].SetPressed(false);
+  }
+  // Set third button pressed
+  scale_btn[2u].SetPressed(true);
+
+  // X button for Lathe mode to change Radius/Diameter
+  x_mode_btn.SetParams("", BORDER_W, dw[GrblComm::AXIS_X].GetStartY(), dw[GrblComm::AXIS_X].GetStartX() - BORDER_W * 2, dw[GrblComm::AXIS_X].GetHeight(), true);
+  x_mode_btn.SetCallback(AppTask::GetCurrent());
+  // X axis mode string
+  x_mode_str.SetParams("", dw[GrblComm::AXIS_X].GetStartX() + BORDER_W*2, dw[GrblComm::AXIS_X].GetStartY() + BORDER_W*2, COLOR_WHITE, Font_8x12::GetInstance());
+
+  // Spindle speed
+  spindle_dw.SetParams(BORDER_W, y + height - window_height - BORDER_W, display_drv.GetScreenW() / 2 - BORDER_W * 3 / 2,  window_height, 5u, 0);
+  spindle_dw.SetBorder(BORDER_W, COLOR_RED);
+  spindle_dw.SetDataFont(Font_8x12::GetInstance(), 2u);
+  spindle_dw.SetNumber(grbl_comm.GetSpindleMinSpeed());
+  spindle_dw.SetLimits(grbl_comm.GetSpindleMinSpeed(), grbl_comm.GetSpindleMaxSpeed());
+  spindle_dw.SetUnits("RPM", DataWindow::RIGHT);
+  spindle_dw.SetCallback(AppTask::GetCurrent());
+  spindle_dw.SetActive(true);
+  spindle_dw.SetSelected(true);
+  spindle_name.SetParams("SPINDLE", 0, 0, COLOR_WHITE, Font_8x12::GetInstance());
+  spindle_name.Move(spindle_dw.GetStartX() + BORDER_W*2, spindle_dw.GetStartY() + BORDER_W*2);
+
+  // Set scale button parameters
+  spindle_dir_btn.SetParams("CW", spindle_dw.GetEndX() + 1 + BORDER_W, spindle_dw.GetStartY(), (spindle_dw.GetWidth() - BORDER_W) / 2, window_height, true);
+  spindle_dir_btn.SetCallback(AppTask::GetCurrent());
+  spindle_ctrl_btn.SetParams("START", spindle_dir_btn.GetEndX() + 1 + BORDER_W, spindle_dir_btn.GetStartY(), spindle_dir_btn.GetWidth(), window_height, true);
+  spindle_ctrl_btn.SetCallback(AppTask::GetCurrent());
+
+  // Create version string with oscillator frequency
+#if defined(DEBUG)
+  snprintf(ver_txt, sizeof(ver_txt), "SmartPendant %d.%03d.%d %luMHz DEV", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD, crystal_freq);
+#else
+  snprintf(ver_txt, sizeof(ver_txt), "SmartPendant %d.%03d.%d %luMHz", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD, crystal_freq);
+#endif
+  // Version string
+  version.SetParams(ver_txt, BORDER_W, scale_btn[0].GetEndY() + (spindle_dw.GetStartY() - scale_btn[0].GetEndY() -  Font_8x12::GetInstance().GetCharH()) / 2, COLOR_WHITE, Font_8x12::GetInstance());
+
+  // All good
+  return Result::RESULT_OK;
+}
+
+// *****************************************************************************
+// ***   Show   ****************************************************************
+// *****************************************************************************
+Result DirectControlScr::Show()
+{
+  // Version string
+  version.Show(1);
+
+  // Axis data
+  for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)); i++)
+  {
+    dw[i].Show(100);
+    axis_names[i].Show(100);
+    zero_btn[i].Show(100);
+  }
+
+  // Set current axis to none for prevent accidental movement
+  axis = GrblComm::AXIS_CNT;
+  // Set border to red for all windows
+  for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
+  {
+    dw[i].SetSelected(false);
+  }
+
+  // Update scale buttons
+  UpdateScaleButtons();
+
+  // Clear jog values and directions: encoder clicks buffered between the last
+  // timer tick and Hide() are never consumed while the screen is hidden and
+  // would cause unexpected movement on the first tick after the screen is
+  // shown again.
+  for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
+  {
+    axis_jog_val[i] = 0;
+    axis_jog_dir[i] = 0;
+  }
+  // Clear spindle speed change value for the same reason
+  spindle_jog_val = 0;
+
+  // In Lathe mode show Radius/Diameter string on top of X window and button to change it
+  if(grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_LATHE)
+  {
+    x_mode_str.Show(100 + 1);
+    x_mode_btn.Show(100 - 1);
+  }
+
+  // Spindle control
+  spindle_dw.Show(100);
+  spindle_dw.SetSelected(false); // Disable to reset speed override on select
+  spindle_name.Show(101);
+  spindle_dir_btn.Show(100);
+  spindle_ctrl_btn.Show(100);
+
+  if(grbl_comm.IsHomingEnabled())
+  {
+    // Reinit all three Soft Buttons if we have Homing enabled
+    Application::GetInstance().InitSoftButtons(true);
+    // Show Home button
+    middle_btn.SetString("Home");
+    middle_btn.Show(102);
+  }
+
+  // Soft Buttons
+  left_btn.Show(102);
+  right_btn.Show(102);
+
+  // Set encoder callback handler
+  InputDrv::GetInstance().AddEncoderCallbackHandler(AppTask::GetCurrent(), reinterpret_cast<CallbackPtr>(ProcessEncoderCallback), this, enc_cble);
+
+  // All good
+  return Result::RESULT_OK;
+}
+
+// *****************************************************************************
+// ***   Hide   ****************************************************************
+// *****************************************************************************
+Result DirectControlScr::Hide()
+{
+  // Delete encoder callback handler
+  InputDrv::GetInstance().DeleteEncoderCallbackHandler(enc_cble);
+
+  // Version string
+  version.Hide();
+
+  // In case if it shown, we should hide it
+  change_box.Hide();
+
+  // Axis data
+  for(uint32_t i = 0u; i < NumberOf(dw); i++)
+  {
+    dw[i].Hide();
+    axis_names[i].Hide();
+    zero_btn[i].Hide();
+  }
+  // Scale buttons
+  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
+  {
+    scale_btn[i].Hide();
+  }
+
+  // Hide X button
+  x_mode_btn.Hide();
+  // Hide X mode string
+  x_mode_str.Hide();
+
+  // Spindle control
+  spindle_dw.Hide();
+  spindle_name.Hide();
+  spindle_dir_btn.Hide();
+  spindle_ctrl_btn.Hide();
+
+  // Soft Buttons
+  left_btn.Hide();
+  middle_btn.Hide();
+  right_btn.Hide();
+
+  // Reinit Soft Buttons to change their size back
+  Application::GetInstance().InitSoftButtons(false);
+
+  // All good
+  return Result::RESULT_OK;
+}
+
+// *****************************************************************************
+// ***   TimerExpired function   ***********************************************
+// *****************************************************************************
+Result DirectControlScr::TimerExpired(uint32_t interval)
+{
+  Result result = Result::RESULT_OK;
+
+  // Update left & right button text
+  Application::GetInstance().UpdateLeftButtonText();
+  Application::GetInstance().UpdateRightButtonText();
+
+  // In Lathe mode show Radius/Diameter string on top of X window
+  if(grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_LATHE)
+  {
+    x_mode_str.SetString(grbl_comm.IsLatheDiameterMode() ? "Diameter" : "Radius");
+  }
+
+  // Update numbers with current position
+  for(uint32_t i = 0u; i < grbl_comm.GetLimitedNumberOfAxis(NumberOf(dw)); i++)
+  {
+    dw[i].SetNumber(grbl_comm.GetAxisPosition(i));
+  }
+
+  // Distance(in axis units) the selected axis can travel during one timer
+  // period at its maximum rate($110 + axis). Zero if "Match machine speed
+  // limits" option is disabled, no axis is selected or the rate isn't
+  // received from the controller yet - jog isn't limited in this case.
+  int32_t tick_distance = 0;
+  if(NVM::GetInstance().GetValue(NVM::MPG_MATCH_SPEED_LIMITS) && (axis < GrblComm::AXIS_CNT) && (scale > 0))
+  {
+    // Maximum feed is in report units per minute multiplied by 100: multiply
+    // it by units scaler and divide by 100 * 60 * 1000 to get axis units per
+    // millisecond. 64-bit math: the product doesn't fit in 32 bits for fast
+    // axes in imperial mode.
+    tick_distance = (int32_t)(((uint64_t)grbl_comm.GetAxisMaxFeedX100(axis) * grbl_comm.GetReportUnitsScaler(axis) * interval) / 6000000u);
+  }
+
+  // Distance the axis could travel, but wasn't asked to, is accumulated as
+  // allowance for the next ticks, so slow axes(or big steps) still get whole
+  // clicks. It is limited to one timer period plus one click: anything above
+  // that would be the lag between the handwheel and the machine this option
+  // exists to prevent.
+  if(tick_distance > 0)
+  {
+    jog_allowance += tick_distance;
+    if(jog_allowance > (tick_distance + scale)) jog_allowance = tick_distance + scale;
+  }
+  else
+  {
+    jog_allowance = 0;
+  }
+
+  // Jog axis if encoder clicks are pending
+  for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
+  {
+    // If requested position changed
+    if(axis_jog_val[i] != 0)
+    {
+      // Limit jog to the axis capabilities if option is enabled. Only the
+      // selected axis is limited: allowance is calculated for it.
+      bool limit = (tick_distance > 0) && (i == axis);
+      // Number of clicks to jog in this tick - all pending clicks by default
+      int32_t clicks = axis_jog_val[i];
+      // Number of clicks allowed to stay pending for the next tick - none by default
+      int32_t max_pending = 0;
+
+      if(limit)
+      {
+        // Number of clicks that fit into allowance
+        int32_t max_clicks = jog_allowance / scale;
+        // Limit clicks
+        if(clicks > max_clicks)
+        {
+          clicks = max_clicks;
+        }
+        else if(clicks < -max_clicks)
+        {
+          clicks = -max_clicks;
+        }
+        else
+        {
+          ; // Do nothing - MISRA rule
+        }
+        // Clicks that don't fit stay pending, but no more than one timer
+        // period plus one click. The rest is dropped: the handwheel is turned
+        // faster than the axis can move, so extra clicks would only make the
+        // machine keep moving after the handwheel stops.
+        max_pending = tick_distance / scale + 1;
+      }
+
+      // Jog only if there are clicks left after the limit is applied
+      if(clicks != 0)
+      {
+        // Calculate distance - number of encoder clicks multiplied by click value
+        int32_t distance = clicks * scale;
+        // In Lathe mode we need some changes
+        if((i == GrblComm::AXIS_X) && (grbl_comm.GetModeOfOperation() == GrblComm::MODE_OF_OPERATION_LATHE))
+        {
+          // Invert X axis since clockwise rotation moves cutter to work piece(X decreased)
+          // and counterclockwise rotation moves cutter away from work piece(X increased)
+          distance = -distance;
+        }
+
+        // Feed in mm/min or deg/min(21600 deg/min is equivalent 60 rpm or 1 revolution per second)
+        uint32_t feed_x100 = (grbl_comm.IsRotaryAxis(i) ? 21600u : 600u) * 100u; // TODO: Make it configurable?
+        // If jogging direction is not changed
+        if(((axis_jog_dir[i] < 0) && (clicks < 0)) || ((axis_jog_dir[i] > 0) && (clicks > 0)))
+        {
+          // Feed in encoder clicks per second
+          feed_x100 = InputDrv::GetInstance().GetEncoderSpeed();
+          // 20 clicks per second as minimum feed
+          if(feed_x100 < 20u) feed_x100 = 20u;
+          // Feed in units(1 um or 0.0001 inch depend on controller settings) per second
+          feed_x100 *= scale;
+          // Convert feed from units/sec to units*100/min
+          feed_x100 = feed_x100 * 60u / 10u;
+        }
+        else // And if direction is changed
+        {
+          // grblHAL uses requested feed rate to make backlash movement to
+          // guarantee that endmill never will work outside specified feed rate.
+          // During jogging feedrate can be as slow as 20 um per second(in case
+          // if 1 um step is selected). As result it will take 5 seconds to make
+          // 0.1 mm backlash movement. So, set feed to 600 mm/min when direction
+          // is changed to make quick backlash movement.
+
+          // Save direction of jog. clicks can't be zero here since we
+          // already checked it above.
+          axis_jog_dir[i] = clicks > 0 ? 1 : -1;
+        }
+
+        // Jog machine
+        result = grbl_comm.Jog(i, distance, feed_x100, false);
+
+        // Jogged distance is taken from the allowance
+        if(limit) jog_allowance -= ((clicks < 0) ? -clicks : clicks) * scale;
+        // Remove jogged clicks from the pending ones
+        axis_jog_val[i] -= clicks;
+      }
+
+      // Drop pending clicks above the limit. If jog failed - drop all of them,
+      // otherwise they would cause unexpected movement when jog is possible again.
+      if(result.IsBad())
+      {
+        axis_jog_val[i] = 0;
+      }
+      else if(axis_jog_val[i] > max_pending)
+      {
+        axis_jog_val[i] = max_pending;
+      }
+      else if(axis_jog_val[i] < -max_pending)
+      {
+        axis_jog_val[i] = -max_pending;
+      }
+      else
+      {
+        ; // Do nothing - MISRA rule
+      }
+      // One axis at a time
+      break;
+    }
+  }
+
+  // Update spindle direction button text if spindle is running
+  if(grbl_comm.IsSpindleCCW())
+  {
+    spindle_dir_btn.SetString("CCW");
+  }
+  else
+  {
+    spindle_dir_btn.SetString("CW");
+  }
+
+  // Update spindle control button text
+  if(grbl_comm.IsSpindleRunning())
+  {
+    // If spindle is running - control button is stop button
+    spindle_ctrl_btn.SetString("STOP");
+    // Update current speed - only if 1 second passed after last change
+    if(RtosTick::CheckTimeDifferenceMs(spindle_change_timestamp, 1000u)) spindle_dw.SetNumber(grbl_comm.GetSpindleSpeed());
+  }
+  else
+  {
+    // If spindle is not running - control button is start button
+    spindle_ctrl_btn.SetString("START");
+  }
+
+  // Spindle speed
+  if(spindle_jog_val != 0)
+  {
+    // Update speed in data window
+    spindle_dw.SetNumber(spindle_dw.GetNumber() + spindle_jog_val * scale);
+    // clear jog value
+    spindle_jog_val = 0;
+    // Save timestamp to prevent data window update within 1 second after change
+    spindle_change_timestamp = RtosTick::GetTimeMs();
+    // Update spindle speed if it is running
+    if(grbl_comm.IsSpindleRunning())
+    {
+      grbl_comm.SetSpindleSpeed(spindle_dw.GetNumber(), grbl_comm.IsSpindleCCW());
+    }
+  }
+
+  // If SmartPendant is in control and state is IDLE or JOG - enable buttons
+  if(grbl_comm.IsInControl() && ((grbl_comm.GetState() == GrblComm::IDLE) || (grbl_comm.GetState() == GrblComm::JOG)))
+  {
+    x_mode_btn.Enable();
+    // Enable zero buttons for all axis
+    for(uint32_t i = 0u; i < NumberOf(zero_btn); i++)
+    {
+      zero_btn[i].Enable();
+    }
+    // Enable spindle control button
+    spindle_ctrl_btn.Enable();
+    // Spindle dir button should be disabled if spindle is running
+    if(grbl_comm.IsSpindleRunning())
+    {
+      spindle_dir_btn.Disable();
+    }
+    else
+    {
+      spindle_dir_btn.Enable();
+    }
+  }
+  else
+  {
+    change_box.Hide();
+    x_mode_btn.Disable();
+    // Enable zero buttons for all axis
+    for(uint32_t i = 0u; i < NumberOf(zero_btn); i++)
+    {
+      zero_btn[i].Disable();
+    }
+    // Disable spindle buttons
+    spindle_ctrl_btn.Disable();
+    spindle_dir_btn.Disable();
+  }
+
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   UnpressButtons function   *********************************************
+// *****************************************************************************
+void DirectControlScr::UnpressButtons(void)
+{
+  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
+  {
+    scale_btn[i].SetPressed(false);
+  }
+}
+
+// *****************************************************************************
+// ***   ProcessCallback function   ********************************************
+// *****************************************************************************
+Result DirectControlScr::ProcessCallback(const void* ptr)
+{
+  Result result = Result::RESULT_OK;
+
+  // Process Left & Right buttons
+  if((ptr == &left_btn) || (ptr == &right_btn))
+  {
+    result = Result::ERR_UNHANDLED_REQUEST; // For Application to handle it
+  }
+  else if(ptr == &middle_btn)
+  {
+    grbl_comm.Homing();
+  }
+  // Process X button
+  else if(ptr == &x_mode_btn)
+  {
+    // Invert mode
+    grbl_comm.IsLatheDiameterMode() ? grbl_comm.SetLatheRadiusMode() : grbl_comm.SetLatheDiameterMode();
+  }
+  // Process change box callback
+  else if(ptr == &change_box)
+  {
+    if(change_box.GetResult())
+    {
+      grbl_comm.SetAxisPosition(change_box.GetId(), change_box.GetValue());
+    }
+  }
+  // Process spindle control button
+  else if(ptr == &spindle_ctrl_btn)
+  {
+    if(grbl_comm.IsSpindleRunning())
+    {
+      grbl_comm.StopSpindle();
+    }
+    else
+    {
+      grbl_comm.SetSpindleSpeed(spindle_dw.GetNumber(), grbl_comm.IsSpindleCCW());
+    }
+  }
+  // Process spindle direction button
+  else if(ptr == &spindle_dir_btn)
+  {
+    grbl_comm.SetSpindleDirection(!grbl_comm.IsSpindleCCW());
+  }
+  else
+  {
+    uint32_t i = 0u;
+    // Try to find button
+    for(; i < NumberOf(scale_btn); i++)
+    {
+      if(ptr == &scale_btn[i])
+      {
+        // Set unpressed state for all buttons
+        UnpressButtons();
+        // Set pressed state for selected one
+        scale_btn[i].SetPressed(true);
+        // Save scale to control
+        scale = scale_val[i];
+        break;
+      }
+    }
+    // If previous cycle isn't found button
+    if(i == NumberOf(scale_btn))
+    {
+      // Check axis data windows
+      for(uint32_t i = 0u; i < GrblComm::AXIS_CNT; i++)
+      {
+        // If we tapped on already selected button
+        if((ptr == &dw[i]) && dw[i].IsSelected())
+        {
+          // Setup object to change numerical parameters
+          change_box.Setup(grbl_comm.GetAxisName(i), grbl_comm.GetReportUnits(), dw[i].GetNumber(), -10000000, 10000000, grbl_comm.GetReportUnitsPrecision(i));
+          // Set AppTask
+          change_box.SetCallback(AppTask::GetCurrent());
+          // Save axis index as ID
+          change_box.SetId(i);
+          // Show change box
+          change_box.Show(10000u);
+        }
+        else if(ptr == &dw[i])
+        {
+          // Set border to red for all windows
+          for(uint32_t j = 0u; j < GrblComm::AXIS_CNT; j++)
+          {
+            dw[j].SetSelected(false);
+          }
+          // Unselect spindle data window
+          spindle_dw.SetSelected(false);
+          // Then set border to green for selected one
+          dw[i].SetSelected(true);
+          // Save axis to control
+          axis = (GrblComm::Axis_t)i;
+          // Update scale buttons
+          UpdateScaleButtons();
+          // Break the cycle
+          break;
+        }
+        else if(ptr == &zero_btn[i])
+        {
+          grbl_comm.ZeroAxis((GrblComm::Axis_t)i);
+        }
+      }
+      if(ptr == &spindle_dw)
+      {
+        // If speed override is not 100%
+        if(grbl_comm.GetSpeedOverride() != 100u)
+        {
+          // Set speed override to 100%
+          grbl_comm.SpeedReset();
+          // Set spindle speed to current value to match previous value with
+          // override, but only if spindle is already running: SetSpindleSpeed()
+          // sends M3/M4 which would start a stopped spindle on a mere tap.
+          if(grbl_comm.IsSpindleRunning())
+          {
+            grbl_comm.SetSpindleSpeed(spindle_dw.GetNumber(), grbl_comm.IsSpindleCCW());
+          }
+        }
+        // Select spindle data window
+        spindle_dw.SetSelected(true);
+        // Not an axis
+        axis = GrblComm::AXIS_CNT;
+        // Set border to red for all windows
+        for(uint32_t j = 0u; j < GrblComm::AXIS_CNT; j++)
+        {
+          dw[j].SetSelected(false);
+        }
+        // Update scale buttons
+        UpdateScaleButtons();
+      }
+    }
+  }
+
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Private: ProcessEncoderCallback function   ****************************
+// *****************************************************************************
+Result DirectControlScr::ProcessEncoderCallback(DirectControlScr* obj_ptr, void* ptr)
+{
+  Result result = Result::ERR_NULL_PTR;
+
+  // Check pointer
+  if(obj_ptr != nullptr)
+  {
+    // Cast pointer to "this". Since we can't use non-static members as callback,
+    // we have to provide pinter to object.
+    DirectControlScr& ths = *obj_ptr;
+    // Cast pointer itself to integer value
+    int32_t enc_val = (int32_t)ptr;
+
+    // Save jogging value to send it later
+    if(ths.axis < GrblComm::AXIS_CNT)
+    {
+      ths.axis_jog_val[ths.axis] += enc_val;
+    }
+    else if(ths.spindle_dw.IsSelected())
+    {
+      // Spindle speed can be changed by the encoder only if spindle data
+      // window is explicitly selected, otherwise wheel rotation right after
+      // the screen is shown(no axis selected yet) would change spindle speed.
+      ths.spindle_jog_val += enc_val;
+    }
+    else
+    {
+      ; // Neither axis nor spindle selected - ignore encoder input
+    }
+
+    // Set ok result
+    result = Result::RESULT_OK;
+  }
+
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Private: UpdateScaleButtons function   ********************************
+// *****************************************************************************
+void DirectControlScr::UpdateScaleButtons()
+{
+  // Scale buttons
+  for(uint32_t i = 0u; i < NumberOf(scale_btn); i++)
+  {
+    // Clear scale_str
+    memset(scale_str[i], 0, NumberOf(scale_str[i]));
+
+    // Check if it axis or spindle
+    if(axis < GrblComm::AXIS_CNT)
+    {
+      // Find appropriate scale settings
+      uint32_t idx = (grbl_comm.IsMetric() ? NVM::MPG_METRIC_FEED_1 : NVM::MPG_IMPERIAL_FEED_1);
+      // Check if axis is rotary and if it is - overwrite scale settings with rotary ones
+      if(grbl_comm.IsRotaryAxis(axis)) idx = NVM::MPG_ROTARY_FEED_1;
+      // Get scale
+      scale_val[i] = NVM::GetInstance().GetValue((NVM::Parameters)(idx + i));
+      // Create scale for the button
+      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], grbl_comm.GetReportUnitsScaler(axis), grbl_comm.GetReportUnits(axis), grbl_comm.IsRotaryAxis(axis));
+    }
+    else // Spindle RPM
+    {
+      // Get scale
+      scale_val[i] = (i == 0u) ? 1u : scale_val[i - 1u] * 10u;
+      // Create scale for the button
+      grbl_comm.ValueToStringWithScalerAndUnits(scale_str[i], NumberOf(scale_str[i]), scale_val[i], 1, "rpm");
+    }
+
+    // Replace space to new line between scale and units
+    for(uint8_t j = 0; j < NumberOf(scale_str[i]); j++)
+    {
+      if(scale_str[i][j] == ' ')
+      {
+        scale_str[i][j] = '\n';
+        break;
+      }
+    }
+
+    // Show button
+    scale_btn[i].Show(100);
+    // Check if button is pressed
+    if(scale_btn[i].GetPressed())
+    {
+      // Set corresponding scale
+      scale = scale_val[i];
+    }
+  }
+}
+
+// *****************************************************************************
+// ***   Private constructor   *************************************************
+// *****************************************************************************
+DirectControlScr::DirectControlScr() : left_btn(Application::GetInstance().GetLeftButton()),
+                                       middle_btn(Application::GetInstance().GetMiddleButton()),
+                                       right_btn(Application::GetInstance().GetRightButton()),
+                                       change_box(Application::GetInstance().GetChangeValueBox()){};

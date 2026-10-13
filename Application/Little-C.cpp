@@ -1,0 +1,2768 @@
+// *****************************************************************************
+// ***   A Little C interpreter   **********************************************
+// *****************************************************************************
+
+#include <stdio.h>
+#include <math.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "GrblComm.h" // For internal functions
+
+#include "Little-C.h"
+
+const LittleC::intern_func_type LittleC::intern_func[] =
+{
+  "putch", &LittleC::call_putch,
+  "puts", &LittleC::call_puts,
+  "print", &LittleC::call_print,
+  "println", &LittleC::call_println,
+  "printfp", &LittleC::call_printfp,
+  "abs", &LittleC::call_abs,
+  "sqrt", &LittleC::call_sqrt,
+
+  // SmartPendant Specific functions
+  "GetAxisPosX", &LittleC::call_getaxisposx,
+  "GetAxisPosY", &LittleC::call_getaxisposy,
+  "GetAxisPosZ", &LittleC::call_getaxisposz,
+  "GetMetricAxisPosX", &LittleC::call_getmetricaxisposx,
+  "GetMetricAxisPosY", &LittleC::call_getmetricaxisposy,
+  "GetMetricAxisPosZ", &LittleC::call_getmetricaxisposz,
+  "GetImperialAxisPosX", &LittleC::call_getimperialaxisposx,
+  "GetImperialAxisPosY", &LittleC::call_getimperialaxisposy,
+  "GetImperialAxisPosZ", &LittleC::call_getimperialaxisposz,
+  "IsLatheDiameterMode", &LittleC::call_islathediametermode,
+
+  // null terminate the list
+  "", 0
+};
+
+// Keyword lookup table. Static, so it is shared by all instances and can be
+// placed in ROM instead of taking RAM in every object.
+const LittleC::commands LittleC::table[15] =
+{
+  // Commands must be entered lower case in this table.
+  {"void", VOID},
+  {"char", CHAR},
+  {"int", INT},
+  {"if", IF},
+  {"else", ELSE},
+  {"for", FOR},
+  {"do", DO},
+  {"while", WHILE},
+  {"switch", SWITCH},
+  {"case", CASE},
+  {"default", DEFAULT},
+  {"return", RETURN},
+  {"continue", CONTINUE},
+  {"break", BREAK},
+  {"", END}  // mark end of table
+};
+
+// Error messages. Static, so it is shared by all instances and can be placed
+// in ROM instead of taking RAM in every object.
+const LittleC::err_msg LittleC::errors[28] =
+{
+  {SYNTAX,          "Syntax error"},
+  {NO_EXP,          "No expression present"},
+  {PAREN_EXPECTED,  "Parentheses expected"},
+  {QUOTE_EXPECTED,  "Closing quote expected"},
+  {TOO_LONG_TOKEN,  "Token is too long"},
+  {UNBAL_BRACES,    "Unbalanced braces"},
+  {DUP_VAR,         "Duplicate variable name"},
+  {DUP_FUNC,        "Duplicate function name"},
+  {TYPE_EXPECTED,   "Type specifier expected"},
+  {SEMI_EXPECTED,   "Semicolon expected"},
+  {NEST_FUNC,       "Too many nested function calls"},
+  {RET_NOCALL,      "Return without call"},
+  {PARAM_ERR,       "Parameter error"},
+  {NOT_VAR,         "Not a variable"},
+  {NOT_STRING,      "Not a string"},
+  {BRACE_EXPECTED,  "{ expected (control statements must use blocks)"},
+  {COLON_EXPECTED,  "Colon expected"},
+  {WHILE_EXPECTED,  "While expected"},
+  {UNBAL_PARENS,    "Unbalanced parentheses"},
+  {FUNC_UNDEF,      "Function undefined"},
+  {TOO_MANY_LVARS,  "Too many local variables"},
+  {DIV_BY_ZERO,     "Division by zero"},
+  {UNDEFINED_TOKEN, "Undefined token"},
+  {TOO_MANY_FUNCS,  "Too many functions"},
+  {TOO_MANY_GVARS,  "Too many global variables"},
+  {TOO_DEEP_NESTING,"Nesting is too deep"},
+  {EXECUTION_LIMIT, "Script execution limit exceeded"},
+  {END_ERR,         "Error Not Found"}
+};
+
+// *****************************************************************************
+// ***   Set buffer with program   *********************************************
+// *****************************************************************************
+void LittleC::SetPgmBuffer(char* p_text, int size)
+{
+  // Save program pointer
+  p_buf = p_text;
+  // Save program buffer size(zero if there is no buffer)
+  p_buf_size = (p_text == nullptr) ? 0 : size;
+  // Clear functions index
+  func_index = 0;
+  // Clear global variable index
+  gvar_index = 0;
+}
+
+// *****************************************************************************
+// ***   Set output buffer, size and clear current position   ******************
+// *****************************************************************************
+bool LittleC::SetOutputBuf(char* p_obuf, int size)
+{
+  p_output = p_obuf;
+  output_size = (p_obuf == nullptr) ? 0u : size;
+  cur_pos = 0;
+  // Return true if buffer is exist
+  return ((p_output != nullptr) && (size != 0));
+}
+
+// *****************************************************************************
+// ***   Find the location of all functions in    ******************************
+// ***   the program and store global variables.   *****************************
+// *****************************************************************************
+bool LittleC::Prescan()
+{
+  bool result = false;
+
+  // Restore token budget
+  tokens_remaining = TOKEN_BUDGET;
+
+  // If we have pointer to buffer with program
+  if(p_buf != nullptr)
+  {
+    // Set result
+    result = true;
+
+    // Set program pointer to start of program buffer
+    prog = p_buf;
+
+    int brace = 0;  // When 0, this var tells us that current source position is outside of any function.
+
+    // Initialize functions index
+    func_index = 0;
+    // Initialize global variable index
+    gvar_index = 0;
+    // Initialize nesting depth guard: global variable initializers are
+    // evaluated during prescan and use the guarded expression parser
+    nest_depth = 0;
+    // Undefined token before prescan
+    tok = UNDEFTOK;
+
+    while((tok != END) && result)
+    {
+      // Bypass code inside functions
+      while(brace && (tok != END) && result)
+      {
+        result = get_token();
+        if(*token == '{') brace++;
+        if(*token == '}') brace--;
+      }
+
+      // If end reached or bad result - break the cycle
+      if((tok == END) || !result) break;
+
+      // Save current position
+      const char* tp = prog;
+      result = get_token();
+
+      // Is global var
+      if(((tok == VOID) || (tok == CHAR) || (tok == INT)) && result)
+      {
+        int datatype = tok; // Save data type
+        result = get_token();
+        if((token_type == IDENTIFIER) && result)
+        {
+          const char* fn = token_ptr;
+          result = get_token();
+          // Check if it function declaration
+          if((*token == '(') && result)
+          {
+            // See if function already defined.
+            for(int i = 0; i < func_index; i++)
+              if(!strcomp(func_table[i].func_name, fn))
+                result = sntx_err(DUP_FUNC, result);
+
+            if(func_index >= NUM_FUNC) result = sntx_err(TOO_MANY_FUNCS, result);
+
+            if(result)
+            {
+              func_table[func_index].loc = prog;
+              func_table[func_index].ret_type = datatype;
+              func_table[func_index].func_name = fn;
+              func_index++;
+              while((*token != ')') && (tok != END) && result) result = get_token();
+              // get_token() already left prog just past the ')', and it skips
+              // whitespace itself, so no manual advance is needed there: it
+              // would swallow the opening brace in "void main(){" style
+              // declarations and read past the buffer at the end of program.
+            }
+          }
+          else if(result) // If it not - must be global var
+          {
+            // Variable couldn't be type VOID
+            if(datatype != VOID)
+            {
+              prog = tp; // return to start of declaration
+              result = decl_global();
+            }
+            else
+            {
+              result = sntx_err(TYPE_EXPECTED, result);
+            }
+          }
+          else ; // Do nothing - MISRA rule
+        }
+      }
+      // Function without declared type
+      else if((token_type == IDENTIFIER) && result)
+      {
+        const char* fn = token_ptr;
+        result = get_token();
+        // Check if it function declaration
+        if((*token == '(') && result)
+        {
+          if(func_index >= NUM_FUNC) result = sntx_err(TOO_MANY_FUNCS, result);
+          if(result)
+          {
+            func_table[func_index].loc = prog;
+            func_table[func_index].ret_type = VOID; // Void by default if no declared type
+            func_table[func_index].func_name = fn;
+            func_index++;
+            while((*prog != ')') && (*prog != '\0')) prog++;
+            // Advance only past ')': at the end of the program(missing
+            // closing parenthesis) prog must stay on the terminator,
+            // otherwise next get_token() reads past the buffer.
+            if(*prog == ')') prog++;
+            // prog points to opening curly brace of function
+          }
+        }
+        else result = sntx_err(TYPE_EXPECTED, result); // Variables can't be declared without type
+      }
+      else if((*token == '{') && result) brace++;
+      else ; // Do nothing - MISRA rule
+    }
+
+    if(brace) result = sntx_err(UNBAL_BRACES, result);
+  }
+
+  // Clear number of variables
+  if(result == false)
+  {
+    // Initialize global variable index
+    gvar_index = 0;
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Public: GetGlobalVariableName   ***************************************
+// *****************************************************************************
+bool LittleC::GetGlobalVariableName(int variable_idx, char* ptr, int n)
+{
+  bool result = false;
+  // Check if valid variable index passed
+  if((variable_idx >= 0) && (variable_idx < gvar_index))
+  {
+    // Cycle to copy variable name, but not more than passed buffer length
+    for(int i = 0; i < n; i++)
+    {
+      // If delimiter found
+      if(isdelim(var_stack[variable_idx].name[i]))
+      {
+        // Null-terminate buffer, set result abd break the cycle
+        ptr[i] = '\0';
+        result = true;
+        break;
+      }
+      // Copy character to buffer
+      ptr[i] = var_stack[variable_idx].name[i];
+    }
+    // Name is longer than the buffer - truncate it. Callers pass fixed size
+    // UI buffers and some ignore the result, so the buffer must always be
+    // null-terminated, otherwise it is read out of bounds by strlen() later.
+    if((result == false) && (n > 0)) ptr[n - 1] = '\0';
+  }
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Public: GetGlobalVariableValue   **************************************
+// *****************************************************************************
+bool LittleC::GetGlobalVariableValue(int variable_idx, int& val)
+{
+  bool result = false;
+  // Check if valid variable index passed
+  if((variable_idx >= 0) && (variable_idx < gvar_index))
+  {
+    val = var_stack[variable_idx].data.value;
+    result = true;
+  }
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Public: SetGlobalVariableValue   **************************************
+// *****************************************************************************
+bool LittleC::SetGlobalVariableValue(int variable_idx, int val)
+{
+  bool result = false;
+  // Check if valid variable index passed
+  if((variable_idx >= 0) && (variable_idx < gvar_index))
+  {
+    var_stack[variable_idx].data.value = val;
+    result = true;
+  }
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Public: ResetGlobalVariableValue   ************************************
+// *****************************************************************************
+bool LittleC::ResetGlobalVariableValue(int variable_idx)
+{
+  bool result = false;
+  // Restore token budget
+  tokens_remaining = TOKEN_BUDGET;
+
+  // Check if valid variable index passed
+  if((variable_idx >= 0) && (variable_idx < gvar_index))
+  {
+    result = true;
+
+    // Set prog pointer to global variable
+    prog = var_stack[variable_idx].name;
+
+    // Get token to pass variable name pointer
+    result = get_token();
+    // Double check that it is variable
+    if(token_type != IDENTIFIER) result = sntx_err(SYNTAX, result);
+
+    if(result)
+    {
+      // Data. Zero by default.
+      data_type data = {0};
+      // Another get token to find '=', ',' or ';'
+      result = get_token();
+      if((*token == '=') && result) // is an assignment at declaration
+      {
+        result = get_token();
+        if(result) result = eval_exp0(data); // get value and assign
+      }
+
+      // If variable declared without value - it should be 0 by default
+      // Apply the declared type to the value (char values are truncated)
+      if(result)
+      {
+        if(var_stack[variable_idx].data.type == CHAR) var_stack[variable_idx].data.value = (char)data.value;
+        else var_stack[variable_idx].data.value = data.value;
+      }
+    }
+  }
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Public: GetGlobalVariableCommentPtr   *********************************
+// *****************************************************************************
+bool LittleC::GetGlobalVariableCommentPtr(int variable_idx, const char*& ptr)
+{
+  bool result = false;
+
+  // Check if valid variable index passed
+  if((variable_idx >= 0) && (variable_idx < gvar_index))
+  {
+    const char* var_ptr = var_stack[variable_idx].name;
+
+    // Find comment start
+    while((*var_ptr != '\n') && (*var_ptr != '\r') && (*var_ptr != '\0') && !((var_ptr[0] == '/') && (var_ptr[1] == '/'))) var_ptr++;
+
+    if((var_ptr[0] == '/') && (var_ptr[1] == '/'))
+    {
+      // Skip '//'
+      var_ptr += 2;
+      // Skip any white spaces
+      while(iswhite(*var_ptr)) var_ptr++;
+
+      // If it isn't new line or null-terminatoir character
+      if((*var_ptr != '\r') && (*var_ptr != '\n') && (*var_ptr != 0))
+      {
+        // Set pointer
+        ptr = var_ptr;
+        // Set result flag
+        result = true;
+      }
+    }
+  }
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Execute a program   ***************************************************
+// *****************************************************************************
+bool LittleC::Execute()
+{
+  bool result = false;
+
+  // Restore token budget
+  tokens_remaining = TOKEN_BUDGET;
+
+  // For data returned from main()
+  data_type data;
+
+  // Set program pointer to start of program buffer
+  prog = p_buf;
+  // Set token to undefined before start
+  tok = UNDEFTOK;
+
+  // Initialize the CALL stack index
+  functos = 0;
+  // Initialize local variable stack index
+  lvartos = gvar_index;
+  // Initialize nesting depth guard(increment/decrement are balanced on all
+  // paths, so it should be zero already - this is just a safety measure)
+  nest_depth = 0;
+  // Clear ret value
+  ret_data = {0};
+
+  // Setup call to main()
+  int idx = find_func("main");  // find program starting point
+  if(idx != -1)
+  {
+    prog = func_table[idx].loc;
+    prog--; // back up to opening '('
+    strncpy(token, "main", sizeof(token));
+    result = call(data);  // call main() to start interpreting
+    // Check result If we filled whole buffer
+    if(cur_pos >= output_size - 1)
+    {
+      // Set an error message
+      if(p_output != nullptr) snprintf(p_output, output_size, "Program result doesn't fit into buffer");
+      // And clear result flag
+      result = false;
+    }
+    else
+    {
+      // Null-terminate output buffer (guard against a null buffer, matching
+      // the null checks used on every other p_output access)
+      if(p_output != nullptr) p_output[cur_pos] = '\0';
+    }
+  }
+  else
+  {
+    if(p_output != nullptr) snprintf(p_output, output_size, "main() not found");
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Interpret a single statement or block of code. When       *************
+// ***   interp_block() returns from its initial call, the final   *************
+// ***   brace (or a return) in main() has been encountered.       *************
+// *****************************************************************************
+bool LittleC::interp_block(void)
+{
+  bool result = true;
+
+  // Block flag
+  bool block = false;
+
+  // Save local var stack index
+  int lvartemp = lvartos;
+
+  // Limit nesting depth: every nested block, function call or parenthesized
+  // expression recurses on the native task stack which is only a few
+  // kilobytes, so runaway recursion in a script(deeply nested blocks or a
+  // recursive function) would overflow it and corrupt memory. Check before
+  // increment to keep the counter balanced with the early return.
+  if(nest_depth >= NEST_DEPTH_MAX)
+  {
+    return sntx_err(TOO_DEEP_NESTING);
+  }
+  nest_depth++;
+
+  do
+  {
+    result = get_token();
+
+    // If bad result - break the cycle
+    if(result == false) break;
+
+    // See what kind of token is up
+    if((token_type == IDENTIFIER) || (*token == INC) || (*token == DEC) || (*token == '(')) // Not a keyword, so process expression.
+    {
+      data_type data = {0};
+      result = eval_exp00(data); // process the expression
+      if(*token != ';') result = sntx_err(SEMI_EXPECTED, result);
+    }
+    else if(token_type == BLOCK) // if block delimiter
+    {
+      // If end of block - break the cycle
+      if(*token == '}')
+      {
+        break;
+      }
+      else if(block) // block inside other block
+      {
+        putback(); // restore token to input stream for further processing by interp_block()
+        result = interp_block();
+      }
+      else
+      {
+        block = true; // is a block - interpreting block, not statement
+      }
+    }
+    else // is keyword
+    {
+      switch(tok)
+      {
+        case CHAR:
+        case INT:       // declare local variables
+          putback();
+          result = decl_local();
+          break;
+        case RETURN:    // return from function call
+          result = func_ret();
+          tok = RETURN; // Restore tok after return function evaluation
+          break;
+        case IF:        // process an if statement
+          result = exec_if();
+          break;
+        case ELSE:      // process an else statement
+          result = find_eob(); // find end of else block and continue execution
+          break;
+        case WHILE:     // process a while loop
+          result = exec_while();
+          break;
+        case DO:        // process a do-while loop
+          result = exec_do();
+          break;
+        case FOR:       // process a for loop
+          result = exec_for();
+          break;
+        case CONTINUE:  // continue loop execution
+          break;
+        case BREAK:     // break loop execution
+          break;
+        case SWITCH:  // handle a switch statement 
+          result = exec_switch();
+          break; 
+        case END:
+          result = false;
+          break;
+      }
+    }
+  } while(block && (tok != END) && (tok != RETURN) && (tok != CONTINUE) && (tok != BREAK) && result);
+
+  // Reset the local var stack
+  lvartos = lvartemp;
+
+  // Leaving this nesting level
+  nest_depth--;
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Return the entry point of the specified function.   *******************
+// ***   Return NULL if not found.                           *******************
+// *****************************************************************************
+int LittleC::find_func(const char *name)
+{
+  int idx = -1;
+
+  for(register int i = 0; i < func_index; i++)
+  {
+    if(!strcomp(name, func_table[i].func_name))
+    {
+      idx = i;
+      break;
+    }
+  }
+
+  return idx;
+ }
+
+// *****************************************************************************
+// ***   Declare a global variable   *******************************************
+// *****************************************************************************
+bool LittleC::decl_global(void)
+{
+  bool result = get_token();  // get type
+
+  int vartype = tok; // save var type
+
+  // Process comma-separated list
+  do
+  {
+    // Make already declared globals visible to the initializer
+    // expression (e.g. int h = g * 3;). During prescan lvartos is 0,
+    // so find_var() would not see any of the globals otherwise.
+    lvartos = gvar_index;
+
+    // Guard against overflowing the shared variable array. Globals occupy
+    // the bottom of var_stack, so this also reserves room for locals.
+    if(gvar_index >= NUM_VARS)
+    {
+      result = sntx_err(TOO_MANY_GVARS, result);
+      break;
+    }
+
+    var_stack[gvar_index].data.type = vartype;
+    var_stack[gvar_index].data.value = 0;  // init to 0
+    if(result) result = get_token(); // Get token to get variable name pointer
+    var_stack[gvar_index].name = token_ptr; // Save pointer to variable name
+
+    if(token_type != IDENTIFIER) result = sntx_err(SYNTAX, result);
+
+    // See if variable is a duplicate
+    for(int i = 0; (i < gvar_index) && result; i++)
+      if(!strcomp(var_stack[i].name, token_ptr))
+        result = sntx_err(DUP_VAR);
+
+    if(result)
+    {
+      result = get_token(); // Another get token to find '=', ',' or ';'
+      if((*token == '=') && result) // is an assignment at declaration
+      {
+        data_type data = {0};
+        result = get_token();
+        if(result) result = eval_exp0(data); // get value and assign
+        // Apply the declared type to the value (char values are truncated)
+        if(var_stack[gvar_index].data.type == CHAR) var_stack[gvar_index].data.value = (char)data.value;
+        else var_stack[gvar_index].data.value = data.value;
+      }
+      gvar_index++;
+    }
+  } while((*token == ',') && result);
+
+  if(*token != ';') result = sntx_err(SEMI_EXPECTED, result);
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Declare a local variable   ********************************************
+// *****************************************************************************
+bool LittleC::decl_local(void)
+{
+  bool result = get_token(); // Get variable type
+
+  // Variable struct to add into stack
+  var_type var = {nullptr, {tok, 0}};
+
+  // Process comma-separated list
+  do
+  {
+    var.data.value = 0; // init to 0
+    if(result) result = get_token(); // Get token to get variable name pointer
+    if(token_type != IDENTIFIER) result = sntx_err(SYNTAX, result);
+    if(result)
+    {
+      var.name = token_ptr; // Save pointer to variable name
+      result = get_token(); // Another get token to find '=', ',' or ';'
+      if((*token == '=') && result) // is an assignment at declaration
+      {
+        data_type data = { 0 };
+        result = get_token();
+        if(result) result = eval_exp0(data); // get value and assign
+        // Apply the declared type to the value, the same way assign_var()
+        // does for assignments: char values are truncated
+        if(var.data.type == CHAR) var.data.value = (char)data.value;
+        else var.data.value = data.value;
+      }
+    }
+    if(result) result = local_push(var);
+  } while((*token==',') && result);
+
+  if(*token != ';') result = sntx_err(SEMI_EXPECTED, result);
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Call a function   *****************************************************
+// *****************************************************************************
+bool LittleC::call(data_type& data)
+{
+  bool result = true;
+
+  int idx = find_func(token); // find entry point of function
+  if(idx == -1)
+  {
+    result = sntx_err(FUNC_UNDEF); // function not defined
+  }
+  else
+  {
+    int arg_count = 0;
+    int lvartemp = lvartos;  // save local var stack index
+    result = get_args(arg_count);  // get function arguments
+    const char* temp = prog; // save return location
+    if(result)
+    {
+      result = func_push(lvartemp);  // save local var stack index
+      prog = func_table[idx].loc;  // reset prog to start of function
+    }
+    if(result) result = get_params(arg_count); // load the function's parameters with the values of the arguments
+    if(result) result = interp_block(); // interpret the function
+    if(result)
+    {
+      data = ret_data; // Copy return value
+      data.type = func_table[idx].ret_type; // Set type from function prototype
+      prog = temp; // reset the program pointer
+      result = func_pop(lvartos); // reset the local var stack
+    }
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Push the arguments to a function onto the local variable stack   ******
+// *****************************************************************************
+bool LittleC::get_args(int& count)
+{
+  bool result = true;
+  struct var_type var = {"", ARG, 0};
+
+  // Clear arguments count
+  count = 0;
+
+  // Get first token and check if it '('
+  result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+
+  if(result)
+  {
+    // Get another token to check if it is ')' - if it is, function has no arguments
+    result = get_token();
+    if((*token != ')') && result)
+    {
+      // If function has arguments and token isn't ')' - put it back
+      putback();
+      // Process a comma-separated list of values
+      do
+      {
+        data_type data = {0};
+        result = eval_exp(data);
+        var.data.value = data.value;
+        if(result) result = local_push(var);
+        if(result) result = get_token();
+        count++;
+      } while((*token == ',') && result);
+    }
+  }
+
+  if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Get function parameters   *********************************************
+// *****************************************************************************
+bool LittleC::get_params(int count)
+{
+  bool result = true;
+
+  // Find first argument on the stack
+  int si = lvartos - count;
+
+  // Clear token to enter the cycle
+  *token = '\0';
+
+  // No arguments case
+  if(count == 0) result = get_token();
+
+  // Process comma-separated list of parameters. Stop when either
+  // all arguments processed or ')' reached.
+  for(int i = 0; (i < count) && (*token != ')') && result; i++, si++)
+  {
+    result = get_token();
+    // Check token type - should be type token
+    if((tok != INT) && (tok != CHAR))
+    {
+      result = sntx_err(TYPE_EXPECTED, result);
+      break;
+    }
+    var_stack[si].data.type = tok; // Set argument type
+    // Apply the declared type to the passed value (char values are truncated)
+    if(tok == CHAR) var_stack[si].data.value = (char)var_stack[si].data.value;
+    if(result) result = get_token(); // Get token to get variable name pointer
+    // Parameter name must be an identifier: get_token() succeeds for a number
+    // or a delimiter but leaves token_ptr null, and that null would be stored
+    // in a live var_stack slot and dereferenced by a later variable lookup.
+    if(token_type != IDENTIFIER) result = sntx_err(SYNTAX, result);
+    var_stack[si].name = token_ptr; // Save pointer to variable name
+    if(result) result = get_token(); // Another get token followed after variable name
+  }
+
+  // Check that number of passed arguments match function arguments
+  if(si != lvartos)      result = sntx_err(PARAM_ERR, result);
+  else if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+  else ; // Do nothing - MISRA rule
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Return from a function   **********************************************
+// *****************************************************************************
+bool LittleC::func_ret(void)
+{
+  // The return expression must be evaluated into a local variable:
+  // nested function calls inside the expression overwrite ret_data
+  // (see call()), so passing ret_data directly as the evaluation
+  // target corrupts partially evaluated results like f(n-1) + f(n-2).
+  data_type data = ret_data;
+  // Get return value, if any(including comma operator)
+  bool result = eval_exp(data, true);
+  // Copy evaluated value to the return data
+  ret_data = data;
+  // Return result
+  return result;
+}
+
+// *****************************************************************************
+// ***   Push a local variable   ***********************************************
+// *****************************************************************************
+bool LittleC::local_push(LittleC::var_type i)
+{
+  bool result = true;
+
+  if(lvartos >= NUM_VARS)
+  {
+    result = sntx_err(TOO_MANY_LVARS);
+  }
+  else
+  {
+    var_stack[lvartos] = i;
+    lvartos++;
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Pop index into local variable stack   *********************************
+// *****************************************************************************
+bool LittleC::func_pop(int &param)
+{
+  bool result = true;
+
+  functos--;
+  if(functos < 0)              result = sntx_err(RET_NOCALL);
+  else if(functos >= NUM_FUNC) result = sntx_err(NEST_FUNC);
+  else param = call_stack[functos];
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Push index of local variable stack   **********************************
+// *****************************************************************************
+bool LittleC::func_push(int i)
+{
+  bool result = true;
+  if(functos >= NUM_FUNC)
+  {
+    result = sntx_err(NEST_FUNC);
+  }
+  else
+  {
+    call_stack[functos] = i;
+    functos++;
+  }
+  return result;
+}
+
+// *****************************************************************************
+// ***   Find the index of a variable   ****************************************
+// *****************************************************************************
+int LittleC::get_var_index(char* var_name)
+{
+  int result = -1;
+
+  // First, see if it's a local variable
+  for(register int i = lvartos - 1; i >= 0; i--)
+  {
+    // Skip local variables of caller functions: if the index fell below
+    // the base of the current frame but is still above the globals, jump
+    // to the top global. Checking this before the name comparison also
+    // covers an empty frame (function with no parameters and no locals
+    // yet), where the scan would otherwise start inside the caller's
+    // locals and leak the caller's scope.
+    if((functos > 0) && (i < call_stack[functos - 1]) && (i >= gvar_index))
+    {
+      i = gvar_index - 1;
+      if(i < 0) break; // No global variables to check
+    }
+    if(!strcomp(var_stack[i].name, var_name))
+    {
+      result = i;
+      break;
+    }
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Assign a value to a variable   ****************************************
+// *****************************************************************************
+bool LittleC::assign_var_by_index(int var_index, data_type data)
+{
+  bool result = true;
+
+  // Check variable index
+  if((var_index >= 0) && (var_index < NUM_VARS))
+  {
+    if(var_stack[var_index].data.type == CHAR) var_stack[var_index].data.value = (char)data.value;
+    else if(var_stack[var_index].data.type == INT) var_stack[var_index].data.value = (int)data.value;
+    else var_stack[var_index].data.value = data.value;
+  }
+  else
+  {
+    result = sntx_err(NOT_VAR); // Variable not found
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Assign a value to a variable   ****************************************
+// *****************************************************************************
+bool LittleC::assign_var(char *var_name, data_type data)
+{
+  // Get variable index and assign the value by it
+  return assign_var_by_index(get_var_index(var_name), data);
+}
+
+// *****************************************************************************
+// ***   Find the value of a variable   ****************************************
+// *****************************************************************************
+bool LittleC::find_var_by_index(int var_index, data_type& data)
+{
+  bool result = true;
+
+  // Check variable index
+  if((var_index >= 0) && (var_index < NUM_VARS))
+  {
+    data = var_stack[var_index].data;
+    result = true;
+  }
+  else
+  {
+    result = sntx_err(NOT_VAR); // Variable not found
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Find value of variable   **********************************************
+// *****************************************************************************
+bool LittleC::find_var(char* var_name, data_type& data)
+{
+  // Get variable index and read the value by it
+  return find_var_by_index(get_var_index(var_name), data);
+}
+
+// *****************************************************************************
+// ***   Determine if an identifier is a variable.            ******************
+// ***   Return true if variable is found; false otherwise.   ******************
+// *****************************************************************************
+bool LittleC::is_var(char *var_name)
+{
+  return (get_var_index(var_name) != -1);
+}
+
+// *****************************************************************************
+// ***   Execute an if statement   *********************************************
+// *****************************************************************************
+bool LittleC::exec_if(void)
+{
+  bool result = true;
+
+  // Data type to evaluate condition
+  data_type cond;
+  // Evaluate condition(including comma operator)
+  result = eval_exp(cond, true);
+
+  if(result)
+  {
+    // is true so process target of IF
+    if(cond.value)
+    {
+      result = interp_block();
+    }
+    else // otherwise skip around IF block and process the ELSE, if present
+    {
+      // Clear tok: the condition lookahead may have left a stale keyword
+      // (e.g. RETURN if the skipped statement is 'return x;') which would
+      // falsely trigger find_eob()'s RETURN preservation.
+      tok = UNDEFTOK;
+      result = find_eob(); // find start of next line
+      if(result) result = get_token();
+
+      if(result)
+      {
+        if(tok != ELSE)
+        {
+          putback();  // restore token if no ELSE is present
+          // The lookahead token was returned to the stream, so clear tok:
+          // a keyword like RETURN, BREAK or CONTINUE must not be seen by
+          // the exit condition of the enclosing interp_block() before the
+          // statement is actually interpreted.
+          tok = UNDEFTOK;
+        }
+        else
+        {
+          result = interp_block();
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Execute a while loop   ************************************************
+// *****************************************************************************
+bool LittleC::exec_while(void)
+{
+  bool result = true;
+
+  // Data type to evaluate condition
+  data_type cond;
+
+  putback();   // put back while
+  const char* temp = prog; // save location of top of while loop
+  result = get_token(); // past while
+  if(tok != WHILE) result = sntx_err(WHILE_EXPECTED, result);
+  if(result) result = eval_exp(cond, true); // check the conditional expression(including comma operator)
+
+  // Only if successful result
+  if(result)
+  {
+    // If condition true - process cycle
+    if(cond.value)
+    {
+      // Save program pointer after eval_exp() in case of break
+      const char* temp_ret = prog;
+      // Process block
+      result = interp_block();  // if true, interpret
+      // If return happened - keep tok == RETURN and let it propagate
+      // to the caller. Program pointer will be restored by call().
+      if(tok == RETURN)
+      {
+        ; // Do nothing - MISRA rule
+      }
+      else if(tok == BREAK) // If break happened
+      {
+        // Restore program pointer to the start of the loop body
+        prog = temp_ret;
+        // Skip the loop body. This also clears tok, so BREAK
+        // does not leak into and terminate the enclosing block.
+        if(result) result = find_eob();
+      }
+      else
+      {
+        // Normal completion or continue: clear tok so a leaked
+        // CONTINUE does not terminate the enclosing block.
+        tok = UNDEFTOK;
+        prog = temp;  // loop back to top
+      }
+    }
+    else // otherwise, skip around loop
+    {
+      // Clear tok: the condition lookahead may have left a stale keyword
+      // (e.g. RETURN for 'while(x) return 1;') which would falsely trigger
+      // find_eob()'s RETURN preservation and terminate the function.
+      tok = UNDEFTOK;
+      result = find_eob();
+    }
+  }
+ 
+  return result;
+}
+
+// *****************************************************************************
+// ***   Execute a do loop   ***************************************************
+// *****************************************************************************
+bool LittleC::exec_do(void)
+{
+  bool result = true;
+  // Continue flag for break the cycle in case of break or return
+  bool cont = true;
+
+  putback();
+  const char* temp = prog;  // save location of top of do loop
+
+  result = get_token(); // get start of loop
+  if(result) result = interp_block(); // interpret loop
+  // If return happened - keep tok == RETURN and let it propagate to the
+  // caller without evaluating the loop condition. Program pointer will
+  // be restored by call(). Scanning for WHILE with get_token() would
+  // destroy tok and downgrade the return to a break.
+  if(result)
+  {
+    if(tok == RETURN)
+    {
+      ; // Do nothing - MISRA rule
+    }
+    else
+    {
+      if((tok == CONTINUE) || (tok == BREAK))
+      {
+        if(tok == BREAK)
+        {
+          cont = false;
+        }
+        // Search end of while cycle
+        while((tok != WHILE) && result)
+        {
+          result = get_token();
+          if(tok == END) result = sntx_err(SYNTAX, result);
+        }
+        if(result) putback();
+      }
+      if(result)
+      {
+        data_type cond; // data type to evaluate condition
+        if(result) result = get_token();
+        if(tok != WHILE) result = sntx_err(WHILE_EXPECTED, result);
+        if(result) result = eval_exp(cond, true); // check the loop condition including comma operator
+        if(cond.value && cont && result) prog = temp; // if true loop; otherwise, continue on
+      }
+    }
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Execute a for loop   **************************************************
+// *****************************************************************************
+bool LittleC::exec_for(void)
+{
+  bool result = true;
+  // Data type to evaluate condition
+  data_type cond = {0};
+
+  // Save local var stack index
+  int lvartemp = lvartos;
+
+  // To pass opening '('
+  result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  // To figure out next token type
+  if(result) result = get_token();
+
+  if(result)
+  {
+    // Check token type - if it char or int
+    if((tok == CHAR) || (tok == INT))
+    {
+      // Putback type token
+      putback();
+      // Declare local variable
+      result = decl_local();
+    }
+    else
+    {
+      // Otherwise initialization expression(s)
+      result = eval_exp00(cond);
+    }
+  }
+
+  if(result)
+  {
+    if(*token != ';')
+    {
+      result = sntx_err(SEMI_EXPECTED);
+    }
+    else
+    {
+      const char* temp1 = prog;
+      for(;result;)
+      {
+        result = get_token();
+        if(result) result = eval_exp00(cond);  // check the condition
+        if(result)
+        {
+          // An empty condition means always true, as in C: for(;;) { ... }
+          // (eval_exp00() returns an empty expression as {VOID, 0})
+          if(cond.type == VOID) cond.value = 1;
+
+          if(*token != ';')
+          {
+            result = sntx_err(SEMI_EXPECTED);
+          }
+          else
+          {
+            const char* temp2 = prog;
+
+            // find the start of the for block
+            int brace = 1;
+            while(brace && result)
+            {
+              result = get_token();
+              if(*token=='(') brace++;
+              if(*token==')') brace--;
+              if(tok == END)
+              {
+                result = sntx_err(PAREN_EXPECTED, result);
+                break;
+              }
+            }
+
+            if(result)
+            {
+              if(cond.value) // if true, interpret
+              {
+                // Save pointer in case of break
+                const char* temp3 = prog;
+                // Process block
+                result = interp_block();
+                // If break happened and result is good
+                if(((tok == BREAK) || (tok == RETURN)) && result)
+                {
+                  // Restore program pointer
+                  prog = temp3;
+                  // Clear condition to end the loop
+                  cond.value = 0;
+                }
+              }
+              // Otherwise, skip around loop - should bot be else to handle break & return !
+              if(!cond.value && result)
+              {
+                result = find_eob();
+                break;
+              }
+            }
+            if(result)
+            {
+              prog = temp2;
+              result = get_token();
+              if(result) result = eval_exp00(cond); // do the increment, or multiple if comma separated
+              prog = temp1;  // loop back to top
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Reset the local var stack
+  lvartos = lvartemp;
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Execute a switch statement   ******************************************
+// *****************************************************************************
+bool LittleC::exec_switch(void)
+{ 
+  bool result = true;
+  data_type sval, cval;
+
+  // Get switch expression
+  result = eval_exp(sval);
+
+  // Since eval_exp() will putback last token - take it again
+  if(result) result = get_token();
+  // Check for start of block
+  if(*token != '{') result = sntx_err(BRACE_EXPECTED, result);
+  // Restore this position to skip the complete switch on break/continue,
+  // including braces left open by an early exit from a nested block.
+  const char* switch_start = nullptr;
+  if(result) switch_start = prog - 1;
+
+  // Save local var stack index
+  int lvartemp = lvartos;
+
+  // Set brace counter
+  int brace = 1;
+
+  // Now, check case statements
+  while(result)
+  {
+    // Find a case statement
+    do
+    {
+      result = get_token();
+      if(*token == '{') brace++;
+      else if(*token == '}') brace--;
+      else ; // Do nothing - MISRA rule
+
+      // Check for program end
+      if((tok == END) || (result == false))
+      {
+        result = sntx_err(SYNTAX, result);
+        break;
+      }
+    } while(((tok != CASE) && (tok != DEFAULT) && brace) || (brace > 1)); // Ignore case from nested statemets
+
+    // If no matching case found, then skip
+    if(!brace || !result) break;
+
+    // Get value of the case statement
+    if(result)
+    {
+      if(tok == DEFAULT) cval = sval; // Make it match to enter default statement
+      else result = eval_exp(cval);
+    }
+
+    // Read and discard the ':'
+    if(result) result = get_token();
+    if(*token != ':') result = sntx_err(COLON_EXPECTED, result);
+
+    // If values match, then interpret. 
+    if((cval.value == sval.value) && result)
+    {
+      while(result)
+      {
+        result = get_token();
+        if(!result) break;
+        if(tok == END)
+        {
+          result = sntx_err(UNBAL_BRACES);
+          break;
+        }
+        if(*token == '}') break; // consume the switch's own closing brace
+        // Fall-through crosses labels without executing them as statements.
+        if((tok == CASE) || (tok == DEFAULT))
+        {
+          if(tok == CASE) result = eval_exp(cval);
+          if(result) result = get_token();
+          if(*token != ':') result = sntx_err(COLON_EXPECTED, result);
+          continue;
+        }
+        putback();
+        result = interp_block();
+        // Inspect the control signal before get_token() clears it. Return
+        // unwinds to call(), which restores the caller's source position.
+        if((tok == RETURN) || !result) break;
+        if((tok == BREAK) || (tok == CONTINUE))
+        {
+          char control = tok;
+          prog = switch_start;
+          result = find_eob();
+          // A switch consumes break, but continue belongs to its outer loop.
+          if(result) tok = (control == CONTINUE) ? CONTINUE : UNDEFTOK;
+          break;
+        }
+      }
+      break;
+    }
+
+    if(!result) break;
+  }
+
+  // Reset the local var stack
+  lvartos = lvartemp;
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Find the end of a block   *********************************************
+// *****************************************************************************
+bool LittleC::find_eob(void)
+{
+  bool result = true;
+  bool ret = false;
+
+  // If current tok is RETURN, we have to preserve it
+  if(tok == RETURN) ret = true;
+
+  int brace = 0;
+  int parenthesis = 0;
+  bool semicolon = false;
+  bool block = false; // Set to true when a block was entered
+
+  while(true)
+  {
+    result = get_token();
+    if(!result) break;
+    if(tok == END)
+    {
+      result = sntx_err(SYNTAX);
+      break;
+    }
+    else if(*token == '(') parenthesis++;
+    else if(*token == ')') parenthesis--;
+    else if(*token == '{') {brace++; block = true;}
+    else if(*token == '}') brace--;
+    else if((*token == ';') && (parenthesis == 0)) semicolon = true; // Semicolon shoudn't be inside() to be count
+    else ; // Do nothing - MISRA rule
+
+    // If semicolon found and we not in braces and not in parenthesis - we found end of the block
+    if(semicolon && (brace == 0) && (parenthesis == 0)) break;
+
+    // If a block was entered and all braces closed - we found end of the
+    // block. This handles empty blocks like {} that contain no semicolon,
+    // which would otherwise make the scan overshoot into the next statement.
+    if(block && (brace == 0) && (parenthesis == 0)) break;
+
+    // Brace count can't be less than 0
+    if(brace < 0)
+    {
+      result = sntx_err(UNBAL_BRACES);
+      break;
+    }
+    // Parenthesis count can't be less than 0
+    if(parenthesis < 0)
+    {
+      result = sntx_err(UNBAL_PARENS);
+      break;
+    }
+  }
+
+  // Restore return tok if needed
+  if(ret && result) tok = RETURN;
+
+  return result;
+}
+
+// *****************************************************************************
+// *****************************************************************************
+// ***   PARSER.cpp   **********************************************************
+// *****************************************************************************
+// *****************************************************************************
+
+// *****************************************************************************
+// ***   Entry point into parser with processing comma operators  **************
+// *****************************************************************************
+bool LittleC::eval_exp(data_type& data, bool evaluate_comma)
+{
+  bool result = get_token();
+  if(result) result = eval_exp00(data, evaluate_comma); // Do not process comma operator
+  if(result) putback(); // return last token read to input stream
+  return result;
+}
+
+// *****************************************************************************
+// ***   Entry point into parser   *********************************************
+// *****************************************************************************
+bool LittleC::eval_exp00(data_type& data, bool evaluate_comma)
+{
+  bool result = true;
+
+  nest_depth++;
+
+  // Limit nesting depth(shared counter with interp_block()): every
+  // parenthesized subexpression recurses through this function on the
+  // native task stack, so a deeply nested expression would overflow it.
+  // Counter is incremented above and decremented at the single exit below,
+  // so it stays balanced on every path including this error.
+  if(nest_depth > NEST_DEPTH_MAX)
+  {
+    result = sntx_err(TOO_DEEP_NESTING);
+  }
+  else if(!*token)
+  {
+    result = sntx_err(NO_EXP);
+  }
+  else if(*token == ';')
+  {
+    // Empty expression
+    data.type = VOID;
+    data.value = 0;
+  }
+  else
+  {
+    result = eval_exp0(data);
+    // Process comma only for expression in () or inside for()
+    while((*token == ',') && evaluate_comma && result)
+    {
+      result = get_token(); // to pass the ','
+      if(result) result = eval_exp0(data);
+    }
+  }
+
+  // Leaving this nesting level
+  nest_depth--;
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Process an assignment expression   ************************************
+// *****************************************************************************
+bool LittleC::eval_exp0(data_type& data)
+{
+  bool result = true;
+  bool ret = false;
+
+  if(token_type == IDENTIFIER)
+  {
+    // Get index of the variable receiving the assignment instead of a copy of
+    // its name: an index and a pointer cost a few bytes of stack, while a name
+    // copy costs sizeof(token) bytes in every recursion level of the
+    // expression parser, which is the deepest recursion in the interpreter.
+    int var_index = get_var_index(token);
+    if(var_index != -1) // if a var, see if assignment
+    {
+      // Points to the first character of the variable name in the program,
+      // used to restore the token if this is not an assignment
+      const char* var_ptr = token_ptr;
+      // Get token to figure out if it is an assignment operation
+      result = get_token();
+      register char op = *token;
+      if(((op == '=') || (op == ADD) || (op == SUB) || (op == MUL) || (op == DIV) || (op == MOD)) && result)
+      {
+        result = find_var_by_index(var_index, data); // get var's value
+        if(result)
+        {
+          data_type val = {0};
+          result = get_token();
+          if(result) result = eval_exp0(val);  // get value to process
+          switch(op)
+          {
+            case ADD:
+              data.value += val.value;
+              break;
+            case SUB:
+              data.value -= val.value;
+              break;
+            case MUL:
+              data.value *= val.value;
+              break;
+            case DIV:
+              if(val.value == 0) result = sntx_err(DIV_BY_ZERO, result);
+              else data.value /= val.value;
+              break;
+            case MOD:
+              if(val.value == 0) result = sntx_err(DIV_BY_ZERO, result);
+              else data.value %= val.value;
+              break;
+            default:
+              data.value = val.value; // assignment
+          }
+          if(result) result = assign_var_by_index(var_index, data);  // assign the value
+        }
+        // Set flag to not to call eval_exp1()
+        ret = true;
+      }
+      else // not an assignment
+      {
+        // Restore original token: rewind the program to the first character of
+        // the variable name and read it again. This restores token, token_type
+        // and token_ptr without keeping a copy of the name on the stack.
+        prog = var_ptr;
+        if(result) result = get_token();
+      }
+    }
+  }
+
+  // Process logical operators
+  if((ret == false) && result)
+  {
+    data_type partial_data = {0};
+    result = eval_exp1(data);
+    register char op = *token;
+    if(result)
+    {
+      if((op == AND) || (op == OR))
+      {
+        result = get_token();
+        if(result) result = eval_exp0(partial_data);
+        switch(op)
+        { // Perform the logical operation
+          case AND:
+            data.value = (data.value && partial_data.value);
+            break;
+          case OR:
+            data.value = (data.value || partial_data.value);
+            break;
+        }
+      }
+      if(op == '?')
+      {
+        // Check that we found '?'
+        if(*token != '?') result = sntx_err(PARAM_ERR, result);
+        // Check result
+        if(result)
+        {
+          // Check value
+          if(data.value)
+          {
+            // Get token to pass '?'
+            result = get_token();
+            // Get value. Not including comma operator because ternary
+            // operator can be used as function parameter and in this case
+            // comma isn't operator but delimiter. comma can be an operator
+            // in the first ternary operator part, but to keep everything
+            // similar it won't.
+            if(result) result = eval_exp0(data);
+            // Check that we found ':'
+            if(*token != ':') result = sntx_err(PARAM_ERR, result);
+            // Flag to skip first expression - we should ignore any ':' inside braces or parenthesis
+            int parenthesis = 0;
+            int brace = 0;
+            int ternary = 0;
+            // Skip second expression
+            while((((*token != ';') && (*token != ',') && (*token != '}')) || parenthesis || brace || ternary) && (*token != '\0') && result)
+            {
+              result = get_token();
+              if     (*token == '(') parenthesis++;
+              else if(*token == ')') parenthesis--;
+              else if(*token == '{') brace++;
+              else if(*token == '}') brace--;
+              else if(*token == '?') ternary++;
+              else if(*token == ':') ternary--;
+              else; // Do nothing - MISRA rule
+              // We can have -1 if ternary operator enclosed in parenthesis or inside another ternary operator
+              if((parenthesis < 0) || (ternary < 0)) break;
+            }
+          }
+          else
+          {
+            // Variables to count
+            int parenthesis = 0;
+            int brace = 0;
+            int ternary = 1;
+            // Skip first expression
+            while((parenthesis || brace || ternary) && (*token != '\0') && result)
+            {
+              result = get_token();
+              if     (*token == '(') parenthesis++;
+              else if(*token == ')') parenthesis--;
+              else if(*token == '{') brace++;
+              else if(*token == '}') brace--;
+              else if(*token == '?') ternary++;
+              else if(*token == ':') ternary--;
+              else ; // Do nothing - MISRA rule
+              // Should never get below 0
+              if(parenthesis < 0) result = sntx_err(UNBAL_PARENS, result);
+              // Should never get below 0
+              if(ternary < 0) result = sntx_err(PARAM_ERR, result);
+            }
+            // Check that we found ':'
+            if(*token != ':') result = sntx_err(PARAM_ERR, result);
+            // Get token to pass ':'
+            if(result) result = get_token();
+            // Get another value. Not including comma operator because ternary
+            // operator can be used as function parameter and in this case
+            // comma isn't operator but delimiter
+            if(result) result = eval_exp0(data);
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Process relational operators   ****************************************
+// *****************************************************************************
+bool LittleC::eval_exp1(data_type& data)
+{
+  bool result = true;
+  data_type partial_data = {0};
+
+  static const char relops[7] = {LT, LE, GT, GE, EQ, NE, 0};
+
+  result = eval_exp2(data);
+  register char op = *token;
+  if(strchr(relops, op) && result)
+  {
+    result = get_token();
+    if(*token == ')') result = sntx_err(SYNTAX, result); // eval_exp2 will return 0 if there is nothing and if(a > ) become if(a > 0), but should produce syntax error
+    if(result) result = eval_exp2(partial_data);
+    switch(op)
+    { // Perform the relational operation
+      case LT:
+        data.value = data.value < partial_data.value;
+        break;
+      case LE:
+        data.value = data.value <= partial_data.value;
+        break;
+      case GT:
+        data.value = data.value > partial_data.value;
+        break;
+      case GE:
+        data.value = data.value >= partial_data.value;
+        break;
+      case EQ:
+        data.value = data.value == partial_data.value;
+        break;
+      case NE:
+        data.value = data.value != partial_data.value;
+        break;
+    }
+  }
+  return result;
+}
+
+// *****************************************************************************
+// ***   Add or subtract two terms   *******************************************
+// *****************************************************************************
+bool LittleC::eval_exp2(data_type& data)
+{
+  bool result = true;
+  register char  op;
+  data_type partial_data;
+
+  static const char okops[] = {'(', INC, DEC, '-', '+', 0};
+
+  result = eval_exp3(data);
+  while((((op = *token) == '+') || (op == '-')) && result)
+  {
+    result = get_token();
+
+    if(token_type == DELIMITER && !strchr(okops, *token))
+    {
+      result = sntx_err(SYNTAX, result);
+    }
+
+    if(result) result = eval_exp3(partial_data);
+
+    if(result)
+    {
+      switch(op)
+      {
+        // ***   Add   *********************************************************
+        case '-':
+          data.value -= partial_data.value;
+          break;
+        // ***   Subtract   ****************************************************
+        case '+':
+          data.value += partial_data.value;
+          break;
+      }
+    }
+  }
+  return result;
+}
+
+// *****************************************************************************
+// ***   Multiply or divide two factors   **************************************
+// *****************************************************************************
+bool LittleC::eval_exp3(data_type& data)
+{
+  bool result = true;
+  register char op;
+  data_type partial_data;
+
+  static const char okops[] = {'(', INC, DEC, '-', '+', 0};
+
+  result = eval_exp4(data);
+  while((((op = *token) == '*') || (op == '/') || (op == '%')) && result)
+  {
+    result = get_token();
+
+    if(token_type == DELIMITER && !strchr(okops, *token))
+    {
+      result = sntx_err(SYNTAX, result);
+    }
+
+    if(result) result = eval_exp4(partial_data);
+
+    if(result)
+    {
+      switch(op)
+      {
+        // ***   Multiplication   ************************************************
+        case '*':
+          data.value *= partial_data.value;
+          break;
+        // ***   Division   ******************************************************
+        case '/':
+          if(partial_data.value == 0) result = sntx_err(DIV_BY_ZERO, result);
+          else data.value /= partial_data.value;
+          break;
+        // ***   Modulus   *******************************************************
+        case '%':
+          if(partial_data.value == 0) result = sntx_err(DIV_BY_ZERO, result);
+          else data.value %= partial_data.value;
+          break;
+      }
+    }
+  }
+  return result;
+}
+
+// *****************************************************************************
+// ***   Is a unary +, -, ++, -- or logic ! operation   ************************
+// *****************************************************************************
+bool LittleC::eval_exp4(data_type& data)
+{
+  bool result = true;
+  register char op = '\0';
+
+  if((*token == '+') || (*token == '-') || (*token == '!') || (*token == INC) || (*token == DEC))
+  {
+    op = *token;
+    result = get_token();
+    if(((op == INC) || (op == DEC)) && result)
+    {
+      data_type val = {0};
+      result = find_var(token, val);
+      if(result)
+      {
+        if(op == INC) val.value++;
+        else          val.value--;
+        result = assign_var(token, val);
+      }
+    }
+  }
+
+  if(result) result = eval_exp5(data);
+
+  if(op == '-') data.value = -(data.value);
+  if(op == '!') data.value = !(data.value);
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Process parenthesized expression   ************************************
+// *****************************************************************************
+bool LittleC::eval_exp5(data_type& data)
+{
+  bool result = true;
+
+  if(*token == '(')
+  {
+    result = get_token();
+    if(result) result = eval_exp00(data); // get subexpression
+    if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+    if(result) result = get_token();
+  }
+  else
+  {
+    result = atom(data);
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Find value of number, variable, or function   *************************
+// *****************************************************************************
+bool LittleC::atom(data_type& data)
+{
+  bool result = true;
+
+  int i;
+
+  switch(token_type)
+  {
+    case IDENTIFIER:
+      i = internal_func(token);
+      if(i != -1) // call "standard library" function
+      {
+        result = (*this.*intern_func[i].p)(data);
+      }
+      else if(find_func(token) >= 0) // call user-defined function
+      {
+        result = call(data);
+      }
+      else
+      {
+        // Save variable index instead of a copy of the name: the name is
+        // needed again for the ++/-- assignment below, and an index costs a
+        // few bytes of stack where a name copy costs sizeof(token) bytes in
+        // every recursion level of the expression parser.
+        int var_index = get_var_index(token);
+        result = find_var_by_index(var_index, data); // get var's value
+
+        if(result) result = get_token();
+        if(((*token == INC) || (*token == DEC)) && result)
+        {
+          data_type val = data;
+          if(*token == INC) val.value++;
+          else              val.value--;
+          result = assign_var_by_index(var_index, val);
+        }
+        else putback();
+      }
+      if(result) result = get_token();
+      break;
+
+    case NUMBER: // is numeric constant
+      data.type = INT;
+      data.value = atoi(token);
+      result = get_token();
+      break;
+
+    case STRING: // is string constant
+      data.type = STRING;
+      data.value = (int)(token_ptr - p_buf);
+      result = get_token();
+      break;
+
+    case DELIMITER: // see if character constant or empty expression
+      if((*token == '\'') || (*token == ')'))
+      {
+        if(*token == '\'') // if character constant
+        {
+          data.type = CHAR;
+          data.value = *prog;
+          if(*prog != '\0') prog++; // Pass the character (only if not end of program)
+          if(*prog != '\'') result = sntx_err(QUOTE_EXPECTED);
+          else prog++; // Pass the quote mark (only if it is present)
+          if(result) result = get_token();
+        }
+        break;
+      }
+      // Intentional fall-trough to default to in case of error
+
+    default:
+      result = sntx_err(SYNTAX); // syntax error
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Display an error message   ********************************************
+// *****************************************************************************
+bool LittleC::sntx_err(int error, bool result)
+{
+  // Output error only if result was good(bad result means we already reported an error)
+  if((p_output != nullptr) && (output_size != 0) && result)
+  {
+    int linecount = 0;
+
+    // Find error message
+    for(int i = 0; i < (int)(sizeof(errors) / sizeof(errors[0])); i++)
+    {
+      if(errors[i].err == error)
+      {
+        error = i;
+        break;
+      }
+    }
+    // Check that input parameter is an actual error
+    if(error > END_ERR) error = END_ERR;
+
+    // Clear current position to output error instead program
+    cur_pos = 0;
+
+    // Display error and line number
+    snprintf(&p_output[cur_pos], output_size - cur_pos, "%s", errors[error].msg);
+    // Move current position to the end
+    while((p_output[cur_pos] != '\0') && (cur_pos < output_size)) cur_pos++;
+
+    // Find line number of error
+    const char* p = p_buf;
+    while((p != prog) && (*p != '\0'))
+    {
+      p++;
+      // Windows or Mac newline
+      if(*p == '\r')
+      {
+        linecount++;
+        if(p == prog) break;
+        // See if this is a Windows or Mac newline
+        if(*(p+1) == '\n') p++;
+      }
+      // Unix newline
+      else if(*p == '\n')
+      {
+        linecount++;
+      }
+      else if(*p == '\0') linecount++;
+      else ; // Do nothing - MISRA rule
+    }
+    snprintf(&p_output[cur_pos], output_size - cur_pos, " in line %d\n", linecount);
+    // Move current position to the end
+    while((p_output[cur_pos] != '\0') && (cur_pos < output_size)) cur_pos++;
+
+    const char* temp = p;
+    // Roll back until previous line
+    while((p > p_buf) && (*p != '\n') && (*p != '\r')) p--;
+    // Skip new line symbol we found and any white spaces
+    if((*p == '\n') || (*p == '\r') || iswhite(*p)) p++;
+    // Display offending line. Bound the copy to the output buffer: the
+    // source line length is controlled by the program being interpreted, so
+    // an unchecked copy overflows p_output. Leave one byte for the
+    // terminator.
+    while((p <= temp) && (cur_pos < (output_size - 1))) p_output[cur_pos++] = *p++;
+    p_output[cur_pos] = '\0';
+  }
+
+  return false;
+}
+
+// *****************************************************************************
+// ***   Get a token   *********************************************************
+// *****************************************************************************
+bool LittleC::get_token(void)
+{
+  bool result = true;
+
+  // Count this token against the execution budget. When the budget is spent
+  // the error is reported and the function returns before lexing anything:
+  // token, tok and token_type still describe the previous token. That is
+  // safe only because every caller checks the result and unwinds - a scan
+  // loop that ignores it would spin on the stale token forever.
+  // INT32_MAX in TOKEN_BUDGET disables the limit.
+  if(tokens_remaining != INT32_MAX)
+  {
+    if(tokens_remaining > 0) tokens_remaining--;
+    else return sntx_err(EXECUTION_LIMIT);
+  }
+
+  register char *temp;
+
+  token_type = UNDEFTT;
+  tok = UNDEFTOK;
+  token_ptr = nullptr;
+
+  temp = token;
+  *temp = '\0';
+
+  // Skip over white spaces and new lines
+  while((iswhite(*prog) || (*prog == '\r') || (*prog == '\n')) && *prog) prog++;
+
+  // Skip over white spaces and new lines
+  while(*prog)
+  {
+    // Skip over white spaces and new lines
+    if(iswhite(*prog) || (*prog == '\r') || (*prog == '\n'))
+    {
+      prog++;
+      continue;
+    }
+    // Skip multiline comments
+    if((*prog == '/') && (*(prog + 1) == '*'))
+    {
+      while(!((*prog == '*') && (*(prog + 1) == '/')) && (*prog != '\0')) prog++;
+      // Skip comment end
+      if(*prog != '\0')
+      {
+        prog++; // prog will be increased after break
+        prog++; // prog will be increased after break
+      }
+      continue;
+    }
+    // Look for single line comments
+    if((*prog == '/') && (*(prog + 1) == '/'))
+    {
+      prog += 2;
+      while((*prog != '\n') && (*prog != '\r') && (*prog != '\0')) prog++; // Find end of the line
+      continue;
+    }
+    // If we did not enter in any of conditions above - we should exit this cycle
+    break;
+  }
+
+  // End of file
+  if(*prog == '\0')
+  {
+    *token = '\0';
+    tok = END;
+    token_type = DELIMITER;
+  }
+  // Block delimiters
+  else if(strchr("{}", *prog))
+  {
+    *temp = *prog;
+    temp++;
+    *temp = '\0';
+    prog++;
+    token_type = BLOCK;
+  }
+  else
+  {
+    // Is or might be a relation operator
+    if(strchr("!<>=+-*/%&|", *prog))
+    {
+      char temp_tok = '\0';
+      switch(*prog)
+      {
+        // *******************************************************************
+        case '=':
+          if(*(prog + 1) == '=') temp_tok = EQ;
+          break;
+        // *******************************************************************
+        case '!':
+          if(*(prog + 1) == '=') temp_tok = NE;
+          break;
+        // *******************************************************************
+        case '<':
+          if(*(prog + 1) == '=')      temp_tok = LE;
+          else if(*(prog + 1) == '<') temp_tok = LS;
+          else
+          {
+            // Single character token processed there
+            prog++; *temp = LT; temp++; *temp = '\0';
+            token_type = DELIMITER;
+          }
+          break;
+        // *******************************************************************
+        case '>':
+          if(*(prog + 1) == '=')      temp_tok = GE;
+          else if(*(prog + 1) == '>') temp_tok = RS;
+          else
+          {
+            // Single character token processed there
+            prog++; *temp = GT; temp++; *temp = '\0';
+            token_type = DELIMITER;
+          }
+          break;
+        // *******************************************************************
+        case '+':
+          if(*(prog + 1) == '+') temp_tok = INC;
+          if(*(prog + 1) == '=') temp_tok = ADD;
+          break;
+        // *******************************************************************
+        case '-':
+          if(*(prog + 1) == '-') temp_tok = DEC;
+          if(*(prog + 1) == '=') temp_tok = SUB;
+          break;
+        // *******************************************************************
+        case '*':
+          if(*(prog + 1) == '=') temp_tok = MUL;
+          break;
+        // *******************************************************************
+        case '/':
+          if(*(prog + 1) == '=') temp_tok = DIV;
+          break;
+        // *******************************************************************
+        case '%':
+          if(*(prog + 1) == '=') temp_tok = MOD;
+          break;
+        // *******************************************************************
+        case '&':
+          if(*(prog + 1) == '&') temp_tok = AND;
+          break;
+        // *******************************************************************
+        case '|':
+          if(*(prog + 1) == '|') temp_tok = OR;
+          break;
+      }
+      // If we need to set two characters token
+      if(temp_tok != '\0')
+      {
+        // Advance prog two characters
+        prog++; prog++;
+        // Set token
+        *temp = temp_tok; temp++; *temp = temp_tok; temp++; *temp = '\0';
+        // Set token type
+        token_type = DELIMITER;
+      }
+    }
+
+    if(token_type == UNDEFTT)
+    {
+      // Check for other delimiters
+      if(strchr("!+-*^/%=;:(),'?", *prog))
+      {
+        *temp = *prog;
+        prog++; // advance to next position
+        temp++;
+        *temp = '\0';
+        token_type = DELIMITER;
+      }
+      else if(*prog=='"') // Quoted string
+      {
+        token_ptr = prog; // Save string pointer to use get_token() on it later
+        prog++; // Pass "
+        if((*prog == '\r') || (*prog == '\n') || (*prog == '\0')) result = sntx_err(SYNTAX, result);
+        // Copy string
+        while((*prog != '"') && result)
+        {
+          // Make sure there is room for the character and the terminator
+          if((temp - token) >= (int)(sizeof(token) - 1u))
+          {
+            result = sntx_err(TOO_LONG_TOKEN, result);
+            break;
+          }
+          // Check for \n escape sequence and replace it with \n character
+          if(*prog == '\\')
+          {
+            if(*(prog + 1) == 'n')
+            {
+              prog++;
+              *temp++ = '\n';
+            }
+          }
+          else
+          {
+            *temp++ = *prog;
+          }
+          // Advance program pointer
+          prog++;
+          // Check character
+          if((*prog == '\r') || (*prog == '\n') || (*prog == '\0')) result = sntx_err(SYNTAX, result);
+        }
+        // Pass closing quote. On unterminated string(error is set above) prog
+        // must stay on the terminator, otherwise following get_token() calls
+        // would read past the end of the program buffer.
+        if(*prog == '"') prog++;
+        *temp = '\0';
+        token_type = STRING;
+      }
+      else if(isdigit(*prog)) // Number
+      {
+        while(!isdelim(*prog))
+        {
+          // Make sure there is room for the character and the terminator
+          if((temp - token) >= (int)(sizeof(token) - 1u))
+          {
+            result = sntx_err(TOO_LONG_TOKEN, result);
+            break;
+          }
+          *temp++ = *prog++;
+        }
+        *temp = '\0';
+        token_type = NUMBER;
+      }
+      else
+      {
+        if(isalpha(*prog)) // Var or command
+        {
+          // Save token pointer. Valid only for variable, command, function or string.
+          token_ptr = prog;
+          while(!isdelim(*prog))
+          {
+            // Make sure there is room for the character and the terminator
+            if((temp - token) >= (int)(sizeof(token) - 1u))
+            {
+              result = sntx_err(TOO_LONG_TOKEN, result);
+              break;
+            }
+            *temp++ = *prog++;
+          }
+          token_type = TEMP;
+        }
+
+        *temp = '\0';
+
+        // See if a string is a command or a variable
+        if(token_type == TEMP)
+        {
+          tok = look_up(token); // convert to internal rep
+          if(tok) token_type = KEYWORD; // is a keyword
+          else token_type = IDENTIFIER;
+        }
+      }
+    }
+  }
+
+  if(token_type == UNDEFTT)
+  {
+    // Undefined token - end of program
+    *token = '\0';
+    tok = END;
+    token_type = DELIMITER;
+    // Show an error
+    result = sntx_err(UNDEFINED_TOKEN, result);
+  }
+
+  return result;
+}
+// *****************************************************************************
+// ***   Get string token by index   *******************************************
+// *****************************************************************************
+bool LittleC::get_string_token(int idx)
+{
+  // Index is a calculated value: arithmetic on a string literal in a script
+  // produces an arbitrary number with type STRING. It must be validated
+  // before use, otherwise prog becomes a wild pointer and tokenization
+  // reads(and can fault) outside of the program buffer.
+  if((idx < 0) || (idx >= p_buf_size) || (p_buf[idx] != '"')) return sntx_err(NOT_STRING);
+  const char* tmp = prog; // Save current program idx
+  prog = &p_buf[idx]; // Set prog to string token
+  bool result = get_token(); // Get token to fill token[]
+  if(token_type != STRING) result = sntx_err(NOT_STRING, result);
+  prog = tmp; // Restore prog index. Last token is lost, putback can't be used after that, only get_token can be used.
+  return result;
+}
+
+// *****************************************************************************
+// ***   Return a token to input stream   **************************************
+// *****************************************************************************
+void LittleC::putback(void)
+{
+  char *t = token;
+  for(; *t; t++) prog--;
+}
+
+// *****************************************************************************
+// ***   Look up a token's internal representation in the token table   ********
+// *****************************************************************************
+int LittleC::look_up(char *s)
+{
+// Conversation to lower case should be done only for internal commands.
+// For variables and function names we want to have them unchanged. 
+// For now this converation is disabled, right way to do it to copy string to
+// temporary buffer and convert it to lower case.
+// 
+//  // Convert to lowercase
+//  char *p = s;
+//  while(*p) {*p = tolower(*p); p++;}
+
+  // See if token is in table
+  for(register int i = 0; *table[i].command; i++)
+  {
+    if(!strcmp(table[i].command, s)) return table[i].tok;
+  }
+
+  return 0; // unknown command
+}
+
+// *****************************************************************************
+// ***   Return index of internal library function or -1 if not found   ********
+// *****************************************************************************
+int LittleC::internal_func(char *s)
+{
+  for(int i = 0; intern_func[i].f_name[0]; i++)
+  {
+    if(!strcmp(intern_func[i].f_name, s)) return i;
+  }
+  return -1;
+}
+
+// *****************************************************************************
+// ***   Return true if c is a delimiter   *************************************
+// *****************************************************************************
+int LittleC::isdelim(char c)
+{
+  if(strchr(" !:;,+-<>'/*%^=()?{}", c) || (c == 9) || (c == '\r') || (c == '\n') || (c == 0)) return 1;
+  return 0;
+}
+
+// *****************************************************************************
+// ***   Return 1 if c is space or tab   ***************************************
+// *****************************************************************************
+int LittleC::iswhite(char c)
+{
+  if((c == ' ') || (c == '\t')) return 1;
+  else return 0;
+}
+
+// *****************************************************************************
+// ***   Compare two strings, return 0 if equal   ******************************
+// *****************************************************************************
+bool LittleC::strcomp(const char* str1, const char* str2)
+{
+  bool is_different = false;
+
+  // Cycle until both delimiter found
+  while(!(isdelim(*str1) && isdelim(*str2)))
+  {
+    // Strings can have different delimiters
+    if(*str1 != *str2)
+    {
+      is_different = true;
+      break;
+    }
+    // increase pointers to move to next character
+    str1++;
+    str2++;
+  }
+
+  return is_different;
+}
+
+// *****************************************************************************
+// *****************************************************************************
+// ***   LCLIB.cpp   ***********************************************************
+// *****************************************************************************
+// *****************************************************************************
+
+// *****************************************************************************
+// ***   Helper function to avoid copy-paste for functions without arguments   *
+// *****************************************************************************
+bool LittleC::no_arg_func()
+{
+  bool result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  if(result) result = get_token();
+  if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+  return result;
+}
+
+// *****************************************************************************
+// ***   Put a character to the display   **************************************
+// *****************************************************************************
+bool LittleC::call_putch(data_type& ret)
+{
+  // Consume opening parenthesis. A bare eval_exp() here would not stop at
+  // the closing parenthesis and would absorb any operators that follow the
+  // call, e.g. putch(65) + putch(66) would evaluate 65 + putch(66).
+  bool result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  // Evaluate the argument
+  if(result) result = eval_exp(ret);
+  // Consume closing parenthesis
+  if(result) result = get_token();
+  if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+
+  if((p_output != nullptr) && (cur_pos < (output_size - 1)) && result)
+  {
+    p_output[cur_pos] = ret.value;
+    cur_pos++;
+  }
+  else
+  {
+    result = false;
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Call puts()   *********************************************************
+// *****************************************************************************
+bool LittleC::call_puts(data_type& ret)
+{
+  bool result = true;
+
+  ret = {0};
+
+  result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  if(result)
+  {
+    result = get_token();
+    if(token_type != STRING) result = sntx_err(QUOTE_EXPECTED, result);
+  }
+  if(result)
+  {
+    // Output the string
+    if(p_output != nullptr)
+    {
+      // Display error and line number
+      snprintf(&p_output[cur_pos], output_size - cur_pos, "%s\n", token);
+      // Move current position to the end
+      while((p_output[cur_pos] != '\0') && (cur_pos < output_size)) cur_pos++;
+    }
+
+    result = get_token();
+    if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   A built-in console output function   **********************************
+// *****************************************************************************
+bool LittleC::call_print(data_type& ret)
+{
+  bool result = true;
+
+  ret = {VOID, 0};
+
+  result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  else *token = ','; // Set token to enter inside next cycle
+
+  // Do cycle to process all arguments
+  while((*token != ')') && (*token == ',') && result)
+  {
+    result = get_token();
+    if(!result) break;
+
+    // No arguments call - just exit. Token type must be checked:
+    // a string argument may begin with ')' (e.g. println(") text"))
+    // and must not be confused with the closing parenthesis.
+    if((token_type == DELIMITER) && (*token == ')'))
+    {
+      break;
+    }
+    else if(token_type == STRING) // Output a string
+    {
+      // Print string(token is user data, so it must not be used as the format string)
+      if(p_output != nullptr) snprintf(&p_output[cur_pos], output_size - cur_pos, "%s", token);
+    }
+    else // Output result of expression
+    {
+      // putback last token to process expression
+      putback();
+      // Process expression
+      data_type data = {0};
+      result = eval_exp(data);
+      // Output the result
+      if(result && (p_output != nullptr))
+      {
+        switch(data.type)
+        {
+          case VOID:
+            // Void type - just ignore and output nothing
+            break;
+          case CHAR:
+            snprintf(&p_output[cur_pos], output_size - cur_pos, "%c", (char)data.value);
+            break;
+          case INT:
+            snprintf(&p_output[cur_pos], output_size - cur_pos, "%d", (int)data.value);
+            break;
+          case STRING:
+            result = get_string_token(data.value);
+            // token is user data, so it must not be used as the format string
+            if(result) snprintf(&p_output[cur_pos], output_size - cur_pos, "%s", token);
+            break;
+          default:
+            // Any other type - error
+            result = sntx_err(TYPE_EXPECTED);
+            break;
+        }
+      }
+    }
+    // Move current position to the end
+    if(p_output != nullptr) while((p_output[cur_pos] != '\0') && (cur_pos < output_size)) cur_pos++;
+
+    if(result) result = get_token();
+  }
+
+  if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   A built-in console output function with new line   ********************
+// *****************************************************************************
+bool LittleC::call_println(data_type& ret)
+{
+  bool result = call_print(ret);
+
+  if((p_output != nullptr) && (cur_pos < (output_size - 1)) && result)
+  {
+    p_output[cur_pos++] = '\n'; // add new line character
+    p_output[cur_pos] = '\0';   // and null-terminate string
+  }
+  else
+  {
+    result = false;
+  }
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   A built-in console output function for fixed-point number   ***********
+// *****************************************************************************
+bool LittleC::call_printfp(data_type& ret)
+{
+  bool result = true;
+  data_type data = {0}, scaler = {0};
+  int precision = 0; // Variables to convert scaler to precision
+
+  result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  if(result) result = eval_exp(data);
+  if(result) result = get_token();
+  if(*token != ',') result = sntx_err(PARAM_ERR, result);
+  if(result) result = eval_exp(scaler);
+  if(result) result = get_token();
+  if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+
+  // Convert scaler to precision to use later
+  if(result)
+  {
+    // Save scaler value to mess with it
+    int scl_val = scaler.value;
+    // Convert scaler to precision
+    while(scl_val >= 10)
+    {
+      // Scaler should be power of 10
+      if(scl_val % 10)
+      {
+        break;
+      }
+      else
+      {
+        scl_val /= 10;
+        precision++;
+      }
+    }
+    // Scaler should be power of 10 and precision shouldn't be greater than 9
+    if((scl_val != 1) || (precision > 9))
+    {
+      result = sntx_err(PARAM_ERR);
+    }
+  }
+
+  // Print string
+  if((p_output != nullptr) && result)
+  {
+    if(scaler.value == 1)
+    {
+      snprintf(&p_output[cur_pos], output_size - cur_pos, "%d", data.value);
+    }
+    else
+    {
+      // Format string. * should be replaced to number
+      char fmt_str[] = "%s%d.%0*d";
+      // Replace * with precision number
+      fmt_str[7u] = 0x30 + precision;
+
+      // Find sign: sigh should be handled separately, because it will be lost
+      // for values less than scaler.
+      bool is_negative = data.value < 0;
+      // Remove sign from number
+      data.value = abs(data.value);
+
+      // Print string
+      snprintf(&p_output[cur_pos], output_size - cur_pos, fmt_str, is_negative ? "-" : "", data.value / scaler.value, data.value % scaler.value);
+    }
+    // Move current position to the end
+    while((p_output[cur_pos] != '\0') && (cur_pos < output_size)) cur_pos++;
+  }
+
+  // This function return VOID type which allow to use if inside print()
+  ret.type = VOID;
+  ret.value = 0;
+
+  return result;
+}
+
+// *****************************************************************************
+// ***   Return absolute value   ***********************************************
+// *****************************************************************************
+bool LittleC::call_abs(data_type& ret)
+{
+  // Consume opening parenthesis (see call_putch() comment)
+  bool result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  // Evaluate the argument
+  if(result) result = eval_exp(ret);
+  // Consume closing parenthesis
+  if(result) result = get_token();
+  if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+  if(result) ret.value = abs(ret.value);
+  return result;
+}
+
+// *****************************************************************************
+// ***   Return square root value   ********************************************
+// *****************************************************************************
+bool LittleC::call_sqrt(data_type& ret)
+{
+  // Consume opening parenthesis (see call_putch() comment)
+  bool result = get_token();
+  if(*token != '(') result = sntx_err(PAREN_EXPECTED, result);
+  // Evaluate the argument
+  if(result) result = eval_exp(ret);
+  // Consume closing parenthesis
+  if(result) result = get_token();
+  if(*token != ')') result = sntx_err(PAREN_EXPECTED, result);
+  // Negative input has no integer square root: return 0 instead of the
+  // undefined behavior of converting NaN to int
+  if(result) ret.value = (ret.value > 0) ? (int)sqrt((double)ret.value) : 0;
+  return result;
+}
+
+// *****************************************************************************
+// ***   Return current X axis value   *****************************************
+// *****************************************************************************
+bool LittleC::call_getaxisposx(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_X);
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current Y axis value   *****************************************
+// *****************************************************************************
+bool LittleC::call_getaxisposy(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_Y);
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current Z axis value   *****************************************
+// *****************************************************************************
+bool LittleC::call_getaxisposz(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_Z);
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current X axis value in um   ***********************************
+// *****************************************************************************
+bool LittleC::call_getmetricaxisposx(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().ConvertUnitsToMetric(GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_X));
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current Y axis value in um   ***********************************
+// *****************************************************************************
+bool LittleC::call_getmetricaxisposy(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().ConvertUnitsToMetric(GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_Y));
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current Z axis value in um   ***********************************
+// *****************************************************************************
+bool LittleC::call_getmetricaxisposz(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().ConvertUnitsToMetric(GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_Z));
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current X axis value in tenths(0.0001 inch)   ******************
+// *****************************************************************************
+bool LittleC::call_getimperialaxisposx(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().ConvertUnitsToImperial(GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_X));
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current Y axis value in tenths(0.0001 inch)   ******************
+// *****************************************************************************
+bool LittleC::call_getimperialaxisposy(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().ConvertUnitsToImperial(GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_Y));
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current Z axis value in tenths(0.0001 inch)   ******************
+// *****************************************************************************
+bool LittleC::call_getimperialaxisposz(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().ConvertUnitsToImperial(GrblComm::GetInstance().GetAxisPosition(GrblComm::AXIS_Z));
+  return no_arg_func();
+}
+
+// *****************************************************************************
+// ***   Return current mode(radius/diameter)   ********************************
+// *****************************************************************************
+bool LittleC::call_islathediametermode(data_type& ret)
+{
+  ret.type = INT;
+  ret.value = GrblComm::GetInstance().IsLatheDiameterMode();
+  return no_arg_func();
+}

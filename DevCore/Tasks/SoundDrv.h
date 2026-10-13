@@ -1,0 +1,163 @@
+// *****************************************************************************
+// @file SoundDrv.h
+// @author Nicolai Shlapunov
+//
+// @details DevCore: Sound Driver Class, header
+//
+// @section COPYRIGHT
+//
+//  Copyright (c) 2016-2026, Devtronic & Nicolai Shlapunov
+//  All rights reserved.
+//
+// @section LICENSE
+//
+//  SPDX-License-Identifier: BSD-3-Clause
+//
+//  Software License Agreement (BSD 3-Clause License)
+//
+//  Redistribution and use in source and binary forms, with or without
+//  modification, are permitted provided that the following conditions are met:
+//
+//  1. Redistributions of source code must retain the above copyright notice,
+//     this list of conditions and the following disclaimer.
+//
+//  2. Redistributions in binary form must reproduce the above copyright notice,
+//     this list of conditions and the following disclaimer in the documentation
+//     and/or other materials provided with the distribution.
+//
+//  3. Neither the name of Devtronic nor the names of its contributors may be
+//     used to endorse or promote products derived from this software without
+//     specific prior written permission.
+//
+//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+//  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+//  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+//  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+//  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+//  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+//  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+//  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+//  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+//  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+//  POSSIBILITY OF SUCH DAMAGE.
+//
+// @section SUPPORT
+//
+//  Devtronic invests time and resources providing this open source code,
+//  please support Devtronic and open-source hardware/software by
+//  donations and/or purchasing products from Devtronic.
+//
+// *****************************************************************************
+
+#ifndef SoundDrv_h
+#define SoundDrv_h
+
+// *****************************************************************************
+// ***   Includes   ************************************************************
+// *****************************************************************************
+#include "DevCfg.h"
+
+#include "Framework/AppTask.h"
+#include "Interfaces/IGpio.h"
+#include "Interfaces/IPwm.h"
+#include "DevCfgRtos.h"
+
+// *****************************************************************************
+// ***   Sound Driver Class. This class implement work with sound.   ***********
+// *****************************************************************************
+class SoundDrv : public AppTask
+{
+  public:
+    // *************************************************************************
+    // ***   Public: Get Instance   ********************************************
+    // *************************************************************************
+    // * This class is singleton. For use this class you must call GetInstance()
+    // * to receive reference to Sound Driver class
+    static SoundDrv& GetInstance(void);
+
+    // *************************************************************************
+    // ***   Public: InitTask from AppTask to prevent warning   ****************
+    // *************************************************************************
+    using AppTask::InitTask;
+
+    // *************************************************************************
+    // ***   Public: Init Sound Driver Task   **********************************
+    // *************************************************************************
+    virtual Result InitTask(IPwm& pwm);
+
+    // *************************************************************************
+    // ***   Public: Sound Driver Setup   **************************************
+    // *************************************************************************
+    virtual Result Setup();
+
+    // *************************************************************************
+    // ***   Public: Sound Driver Loop   ***************************************
+    // *************************************************************************
+    virtual Result Loop();
+
+    // *************************************************************************
+    // ***   Public: Beep function   *******************************************
+    // *************************************************************************
+    void Beep(uint16_t freq, uint16_t del, bool pause_after_play = false);
+
+    // *************************************************************************
+    // ***   Public: Play sound function   *************************************
+    // *************************************************************************
+    void PlaySound(const uint16_t* melody, uint16_t size, uint16_t temp_ms = 100u, bool rep = false);
+
+    // *************************************************************************
+    // ***   Public: Stop sound function   *************************************
+    // *************************************************************************
+    void StopSound(void);
+
+    // *************************************************************************
+    // ***   Public: Mute sound function   *************************************
+    // *************************************************************************
+    void Mute(bool mute_flag);
+
+    // *************************************************************************
+    // ***   Public: Is sound played function   ********************************
+    // *************************************************************************
+    bool IsSoundPlayed(void);
+
+  private:
+    // point to PWM driver
+    IPwm *pwm_drv = nullptr;
+
+    // Ticks variable
+    uint32_t last_wake_ticks = 0u;
+
+    // Pointer to table contains melody
+    const uint16_t* sound_table = nullptr;
+    // Size of table
+    uint16_t sound_table_size = 0u;
+    // Current position
+    uint16_t sound_table_position = 0u;
+    // Current frequency delay
+    uint16_t current_delay = 0u;
+    // Time for one frequency in ms
+    uint32_t delay_ms = 100u;
+    // Repeat flag
+    bool repeat = false;
+
+    // Mute flag
+    bool mute = false;
+
+    // Mutex to synchronize when playing melody frames
+    RtosMutex melody_mutex;
+
+    // Semaphore for start play sound
+    RtosSemaphore sound_update;
+
+    // *************************************************************************
+    // ***   Private: Process Button Input function   **************************
+    // *************************************************************************
+    void Tone(uint16_t freq);
+
+    // *************************************************************************
+    // ** Private constructor: Only GetInstance() allow to access this class ***
+    // *************************************************************************
+    SoundDrv() : AppTask(SOUND_DRV_TASK_STACK_SIZE, SOUND_DRV_TASK_PRIORITY, "SoundDrv") {};
+};
+
+#endif

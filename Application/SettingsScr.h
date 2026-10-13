@@ -1,0 +1,165 @@
+//******************************************************************************
+//  @file SettingsScr.h
+//  @author Nicolai Shlapunov
+//
+//  @details SettingsScr: User SettingsScr Class, header
+//
+//  @copyright Copyright (c) 2023, Devtronic & Nicolai Shlapunov
+//             All rights reserved.
+//
+//  @section SUPPORT
+//
+//   Devtronic invests time and resources providing this open source code,
+//   please support Devtronic and open-source hardware/software by
+//   donations and/or purchasing products from Devtronic.
+//
+//******************************************************************************
+
+#ifndef SettingsScr_h
+#define SettingsScr_h
+
+// *****************************************************************************
+// ***   Includes   ************************************************************
+// *****************************************************************************
+#include "DevCore.h"
+
+#include "IScreen.h"
+#include "Tabs.h"
+#include "InputDrv.h"
+#include "NVM.h"
+#include "Menu.h"
+#include "ChangeValueBox.h"
+
+// *****************************************************************************
+// ***   Local const variables   ***********************************************
+// *****************************************************************************
+
+// *****************************************************************************
+// ***   Defines   *************************************************************
+// *****************************************************************************
+#define BG_Z (100)
+
+// *****************************************************************************
+// ***   SettingsScr Class   ***************************************************
+// *****************************************************************************
+class SettingsScr : public IScreen
+{
+  public:
+    // *************************************************************************
+    // ***   Get Instance   ****************************************************
+    // *************************************************************************
+    static SettingsScr& GetInstance();
+
+    // *************************************************************************
+    // ***   Setup function   **************************************************
+    // *************************************************************************
+    virtual Result Setup(int32_t y, int32_t height);
+
+    // *************************************************************************
+    // ***   Public: Show   ****************************************************
+    // *************************************************************************
+    virtual Result Show();
+
+    // *************************************************************************
+    // ***   Public: Hide   ****************************************************
+    // *************************************************************************
+    virtual Result Hide();
+
+    // *************************************************************************
+    // ***   Public: TimerExpired   ********************************************
+    // *************************************************************************
+    virtual Result TimerExpired(uint32_t interval);
+
+    // *************************************************************************
+    // ***   Public: ProcessCallback   *****************************************
+    // *************************************************************************
+    virtual Result ProcessCallback(const void* ptr);
+
+  private:
+    // Number of menu strings. Set to max number on tab - the Info tab with
+    // the link counters is the widest one.
+    static constexpr uint32_t MENU_ITEMS = 14u;
+
+    // The Info tab always starts with the transport line, whatever follows
+    // it - the counters below only exist in framed mode. Cancel on this row
+    // clears them.
+    static constexpr uint32_t INFO_TRANSPORT_ITEM = 0u;
+
+    // Enum with menu items
+    enum
+    {
+      GENERAL_TAB,
+      MPG_TAB,
+      PROBE_TAB,
+      INFO_TAB,
+      MAX_TABS
+    };
+
+    // ORDER OF STRINGS IN THIS ARRAY MUST EXACT MATCHED TO NVM::Parameters
+    const char* const menu_strings[NVM::MAX_VALUES] =
+    {
+      "Version",
+      // General
+      "MPG request", "UART Baud Rate", "Transport", "Frame attempts", "Min ack timeout", "Auto MPG on startup", "Save script result", "Display Inversion",
+      // MPG
+      "Match machine speed limits",
+      "Metric Feed 1", "Metric Feed 2", "Metric Feed 3", "Metric Feed 4",
+      "Imperial Feed 1", "Imperial Feed 2", "Imperial Feed 3", "Imperial Feed 4",
+      "Rotary Feed 1", "Rotary Feed 2", "Rotary Feed 3", "Rotary Feed 4",
+      // Probe
+      "Search speed", "Lock speed", "Position deviation", "Ball tip"
+    };
+
+    // Pages
+    Tabs tabs;
+
+    // Strings
+    char str[MENU_ITEMS][32u + 1u] = {0};
+    // menu items
+    Menu::MenuItem menu_items[MENU_ITEMS];
+    // Menu object
+    Menu menu;
+
+    // Last Update time
+    uint32_t update_time_ms = 0u;
+
+    // Object to change numerical parameters
+    ChangeValueBox& change_box;
+
+    // Display driver instance
+    DisplayDrv& display_drv = DisplayDrv::GetInstance();
+    // GRBL Communication Interface instance
+    GrblComm& grbl_comm = GrblComm::GetInstance();
+    // NVM instance
+    NVM& nvm = NVM::GetInstance();
+
+    // Button callback entry
+    InputDrv::CallbackListEntry btn_cble;
+
+    // *************************************************************************
+    // ***   Private: ProcessMenuCallback function   ***************************
+    // *************************************************************************
+    static Result ProcessMenuCallback(SettingsScr* obj_ptr, void* ptr);
+
+    // *************************************************************************
+    // ***   Private: ProcessMenuCancelCallback function   *********************
+    // *************************************************************************
+    static Result ProcessMenuCancelCallback(SettingsScr* obj_ptr, void* ptr);
+
+    // *************************************************************************
+    // ***   Private: ProcessButtonCallback function   *************************
+    // *************************************************************************
+    static Result ProcessButtonCallback(SettingsScr* obj_ptr, void* ptr);
+
+    // *************************************************************************
+    // ***   Private: UpdateStrings function   *********************************
+    // *************************************************************************
+    void UpdateStrings();
+
+    // *************************************************************************
+    // ***   Private constructor   *********************************************
+    // *************************************************************************
+    SettingsScr();
+};
+
+#endif
