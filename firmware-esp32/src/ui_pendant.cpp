@@ -50,6 +50,7 @@ static float wco[3] = {0.0f, 0.0f, 0.0f};
 static float feed_mm_min = 1200.0f;
 static float laser_s_cmd = 650.0f;
 static float laser_s_act = 648.0f;
+static const float laser_s_max = 1000.0f;  // S max → 100% (grblHAL $30)
 static int feed_ov = 100;
 static int speed_ov = 100;
 static int rapid_ov = 100;
