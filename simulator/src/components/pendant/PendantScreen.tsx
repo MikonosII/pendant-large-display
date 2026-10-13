@@ -404,8 +404,8 @@ function MpgView({
             onClick={() => onLaser(10)}
           />
           <TeleCell
-            title="LASER S act"
-            value={laserAct.toFixed(0)}
+            title="LASER %"
+            value={`${Math.min(100, Math.max(0, Math.round((laserAct / 1000) * 100)))}%`}
             onClick={() => onLaser(-10)}
           />
           <TeleCell

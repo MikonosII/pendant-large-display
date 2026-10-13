@@ -109,8 +109,13 @@ static void refresh_telemetry() {
   lv_label_set_text(feed_lbl, buf);
   snprintf(buf, sizeof(buf), "S %0.0f", laser_s_cmd);
   lv_label_set_text(laser_cmd_lbl, buf);
-  snprintf(buf, sizeof(buf), "act %0.0f", laser_s_act);
-  lv_label_set_text(laser_act_lbl, buf);
+  {
+    int pct = (int)((laser_s_act * 100.0f) / laser_s_max + 0.5f);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    snprintf(buf, sizeof(buf), "%d%%", pct);
+    lv_label_set_text(laser_act_lbl, buf);
+  }
   snprintf(buf, sizeof(buf), "Ov F%d S%d R%d", feed_ov, speed_ov, rapid_ov);
   lv_label_set_text(ov_lbl, buf);
   update_head();
@@ -410,7 +415,7 @@ void ui_pendant_create() {
   lv_obj_t *laser_box = make_telemetry_cell(tele, "LASER S", &laser_cmd_lbl);
   lv_obj_add_flag(laser_box, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(laser_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)1);
-  lv_obj_t *act_box = make_telemetry_cell(tele, "S act", &laser_act_lbl);
+  lv_obj_t *act_box = make_telemetry_cell(tele, "LASER %", &laser_act_lbl);
   lv_obj_add_flag(act_box, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(act_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
   make_telemetry_cell(tele, "OV", &ov_lbl);
