@@ -1,5 +1,5 @@
 #include "handwheel.h"
-#include "pins_config.h"
+#include "pendant_cfg.h"
 
 #include <Arduino.h>
 
@@ -14,6 +14,8 @@ static const int8_t kQuadTable[16] = {
 static volatile int32_t g_counts = 0;
 static volatile uint8_t g_state = 0;
 static bool g_hw = false;
+static int g_pin_a = -1;
+static int g_pin_b = -1;
 
 int8_t handwheel_quad_step(uint8_t prev, uint8_t next) {
   prev &= 3;
@@ -21,11 +23,10 @@ int8_t handwheel_quad_step(uint8_t prev, uint8_t next) {
   return kQuadTable[(prev << 2) | next];
 }
 
-#if (HANDWHEEL_A_GPIO >= 0) && (HANDWHEEL_B_GPIO >= 0)
-
 static void IRAM_ATTR on_edge() {
-  uint8_t a = (uint8_t)digitalRead(HANDWHEEL_A_GPIO);
-  uint8_t b = (uint8_t)digitalRead(HANDWHEEL_B_GPIO);
+  if (g_pin_a < 0 || g_pin_b < 0) return;
+  uint8_t a = (uint8_t)digitalRead(g_pin_a);
+  uint8_t b = (uint8_t)digitalRead(g_pin_b);
   uint8_t next = (uint8_t)((b << 1) | a);
   int8_t d = handwheel_quad_step(g_state, next);
   if (d) {
@@ -35,29 +36,27 @@ static void IRAM_ATTR on_edge() {
 }
 
 void handwheel_begin(void) {
-  pinMode(HANDWHEEL_A_GPIO, INPUT_PULLUP);
-  pinMode(HANDWHEEL_B_GPIO, INPUT_PULLUP);
-  uint8_t a = (uint8_t)digitalRead(HANDWHEEL_A_GPIO);
-  uint8_t b = (uint8_t)digitalRead(HANDWHEEL_B_GPIO);
-  g_state = (uint8_t)((b << 1) | a);
-  g_counts = 0;
-  attachInterrupt(digitalPinToInterrupt(HANDWHEEL_A_GPIO), on_edge, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(HANDWHEEL_B_GPIO), on_edge, CHANGE);
-  g_hw = true;
-  Serial.printf("[mpg] handwheel A=%d B=%d (pull-up, 3.3V)\n", HANDWHEEL_A_GPIO,
-                HANDWHEEL_B_GPIO);
-}
-
-#else
-
-void handwheel_begin(void) {
   g_hw = false;
   g_counts = 0;
   g_state = 0;
-  Serial.println("[mpg] handwheel pins disabled — set HANDWHEEL_A/B_GPIO to wire");
-}
+  g_pin_a = pendant_cfg_get()->handwheel_a;
+  g_pin_b = pendant_cfg_get()->handwheel_b;
 
-#endif
+  if (g_pin_a < 0 || g_pin_b < 0) {
+    Serial.println("[mpg] handwheel pins disabled — set handwheel.a/b in settings.cfg");
+    return;
+  }
+
+  pinMode(g_pin_a, INPUT_PULLUP);
+  pinMode(g_pin_b, INPUT_PULLUP);
+  uint8_t a = (uint8_t)digitalRead(g_pin_a);
+  uint8_t b = (uint8_t)digitalRead(g_pin_b);
+  g_state = (uint8_t)((b << 1) | a);
+  attachInterrupt(digitalPinToInterrupt(g_pin_a), on_edge, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(g_pin_b), on_edge, CHANGE);
+  g_hw = true;
+  Serial.printf("[mpg] handwheel A=%d B=%d (pull-up, 3.3V)\n", g_pin_a, g_pin_b);
+}
 
 void handwheel_poll(void) {
   // GPIO path is ISR-driven; I2C expander path is polled from i2c_mpg_poll().

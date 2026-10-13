@@ -11,8 +11,8 @@ extern "C" {
  * 100 PPR-style quadrature handwheel for MPG jog.
  *
  * CrowPanel Advance has almost no spare GPIO after the RGB panel. Pins default
- * to disabled (−1). When you wire A/B (3.3 V), set HANDWHEEL_A_GPIO /
- * HANDWHEEL_B_GPIO in pins_config.h — typical reclaim when TF/speaker are off:
+ * to disabled (−1). When you wire A/B (3.3 V), set handwheel.a / handwheel.b
+ * in /settings.cfg (SD preferred) — typical reclaim when TF/speaker are off:
  * IO4 / IO5 (see DIP switch table on the board back).
  *
  * Without pins, handwheel_inject() still works for lab / host tests.

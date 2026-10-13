@@ -52,7 +52,7 @@ void grbl_link_probe_ack(void);
 /**
  * Laser enable for PSU K+↔GND path: asserts digital out `M64 Pn`
  * (wire that dout via relay/FET so active pulls K+ to ground).
- * Port `n` = LASER_ENABLE_DOUT. Needs Idle + MPG.
+ * Port `n` = laser.enable_dout from /settings.cfg. Needs Idle + MPG.
  */
 bool grbl_link_laser_enable(void);
 

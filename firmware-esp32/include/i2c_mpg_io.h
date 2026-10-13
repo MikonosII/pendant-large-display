@@ -22,7 +22,7 @@ extern "C" {
  *   P4 = axis Z select
  *   P5 = step-size cycle
  *
- * Disabled by default (`I2C_MPG_ENABLE=0`). Set address / enable in pins_config.
+ * Disabled by default. Set i2c_mpg.enable / i2c_mpg.addr in /settings.cfg.
  */
 
 /** Init expander (no-op if disabled or not found). Call after Wire is up. */

@@ -1,5 +1,5 @@
 #include "job_store.h"
-#include "pins_config.h"
+#include "pendant_cfg.h"
 #include "sample_job_nc.h"
 
 #include <Arduino.h>
@@ -52,7 +52,11 @@ static void list_dir(fs::FS &fs, const char *dir, job_src_t src, job_entry_t *ou
 }
 
 void job_store_begin(void) {
-  lfs_ok = LittleFS.begin(true);  // format on fail — first bring-up
+  // pendant_cfg_begin() mounts LittleFS (+ SD when enabled). Reuse that.
+  lfs_ok = pendant_cfg_lfs_mounted();
+  if (!lfs_ok) {
+    lfs_ok = LittleFS.begin(true);
+  }
   if (lfs_ok) {
     if (!LittleFS.exists("/jobs")) LittleFS.mkdir("/jobs");
     Serial.println("[jobs] LittleFS mounted");
@@ -60,20 +64,25 @@ void job_store_begin(void) {
     Serial.println("[jobs] LittleFS mount failed");
   }
 
-#if defined(JOB_STORE_SD) && JOB_STORE_SD
-  // CrowPanel Advance TF: MOSI=6 MISO=4 SCK=5; CS often hard-tied to 3.3 V.
-  // Requires rear DIP in a TF-card mode (shares pins with speaker I2S).
-  if (!sd_spi) {
-    sd_spi = new SPIClass(HSPI);
-    sd_spi->begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_SPI_CS >= 0 ? SD_SPI_CS : -1);
+  const pendant_cfg_t *c = pendant_cfg_get();
+  if (!c->sd_enable) {
+    sd_ok = false;
+    Serial.println("[jobs] SD disabled in settings.cfg (sd.enable 0)");
+    return;
   }
-  if (SD_SPI_CS >= 0) {
-    sd_ok = SD.begin((uint8_t)SD_SPI_CS, *sd_spi);
-  } else {
-    // CS tied high — pass a dummy CS pin that we hold high; library needs a pin.
-    pinMode(SD_SPI_DUMMY_CS, OUTPUT);
-    digitalWrite(SD_SPI_DUMMY_CS, HIGH);
-    sd_ok = SD.begin((uint8_t)SD_SPI_DUMMY_CS, *sd_spi);
+
+  sd_ok = pendant_cfg_sd_mounted();
+  if (!sd_ok) {
+    // Fallback mount if cfg ran without SD (e.g. first path failed)
+    if (!sd_spi) sd_spi = new SPIClass(HSPI);
+    sd_spi->begin(c->sd_sck, c->sd_miso, c->sd_mosi, c->sd_cs >= 0 ? c->sd_cs : -1);
+    if (c->sd_cs >= 0) {
+      sd_ok = SD.begin((uint8_t)c->sd_cs, *sd_spi);
+    } else {
+      pinMode(c->sd_dummy_cs, OUTPUT);
+      digitalWrite(c->sd_dummy_cs, HIGH);
+      sd_ok = SD.begin((uint8_t)c->sd_dummy_cs, *sd_spi);
+    }
   }
   if (sd_ok) {
     if (!SD.exists("/jobs")) SD.mkdir("/jobs");
@@ -81,10 +90,6 @@ void job_store_begin(void) {
   } else {
     Serial.println("[jobs] SD not present (check DIP TF mode / card)");
   }
-#else
-  sd_ok = false;
-  Serial.println("[jobs] SD disabled at build (JOB_STORE_SD=0) — LittleFS + embedded only");
-#endif
 }
 
 bool job_store_lfs_ok(void) { return lfs_ok; }

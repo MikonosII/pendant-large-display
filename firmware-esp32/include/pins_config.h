@@ -1,7 +1,8 @@
 #pragma once
 
-// Board-fixed layout for CrowPanel Advance. Tunable wiring / laser / UART /
-// handwheel / SD live in user_settings.h — edit that file, not this one.
+// Board-fixed layout for CrowPanel Advance (LCD / touch).
+// Runtime UART / laser / handwheel / SD: edit SD or LittleFS /settings.cfg
+// (see data/settings.cfg). user_settings.h is compile-time fallback only.
 #include "user_settings.h"
 
 // CrowPanel Advance 5″ (ST7262) and 7″ (GW1076-i2) share native 800×480 RGB.

@@ -1,5 +1,6 @@
 #include "ui_pendant.h"
 #include "pins_config.h"
+#include "pendant_cfg.h"
 #include "gcode_path.h"
 #include "sample_job_nc.h"
 #include "grbl_link.h"
@@ -78,7 +79,7 @@ static lv_obj_t *feed_laser_on_btn;
 static lv_obj_t *feed_laser_off_btn;
 static lv_obj_t *pf_laser_val;
 static bool laser_k_on = false;  // PSU K+ enable latched
-static float laser_feed_pct = LASER_FEED_PCT;  // percent, 0.1% steps → S via $30
+static float laser_feed_pct = 5.0f;  // percent, 0.1% steps → S via $30 (from settings.cfg)
 
 static lv_obj_t *feed_lbl;
 static lv_obj_t *laser_cmd_lbl;
@@ -99,7 +100,7 @@ static float wco[3] = {0.0f, 0.0f, 0.0f};
 static float feed_mm_min = 1200.0f;
 static float laser_s_cmd = 650.0f;
 static float laser_s_act = 648.0f;
-static const float laser_s_max = LASER_S_MAX;  // S max → 100% (grblHAL $30)
+static float laser_s_max = 1000.0f;  // S max → 100% (grblHAL $30 / settings.cfg)
 static int feed_ov = 100;
 static int speed_ov = 100;
 static int rapid_ov = 100;
@@ -389,7 +390,8 @@ static void set_laser_k(bool on, bool with_pwm) {
       if (with_pwm) {
         snprintf(buf, sizeof(buf), "Laser ON  ·  K+  %0.1f%%  S%.0f", laser_feed_pct, s);
       } else {
-        snprintf(buf, sizeof(buf), "Laser TEST ON  ·  K+ M64P%d", (int)LASER_ENABLE_DOUT);
+        snprintf(buf, sizeof(buf), "Laser TEST ON  ·  K+ M64P%d",
+                 pendant_cfg_get()->laser_enable_dout);
       }
       lv_label_set_text(state_lbl, buf);
     } else {
@@ -400,7 +402,7 @@ static void set_laser_k(bool on, bool with_pwm) {
     if (grbl_link_online()) {
       grbl_link_laser_off();
       char buf[48];
-      snprintf(buf, sizeof(buf), "Laser OFF  ·  M65P%d", (int)LASER_ENABLE_DOUT);
+      snprintf(buf, sizeof(buf), "Laser OFF  ·  M65P%d", pendant_cfg_get()->laser_enable_dout);
       lv_label_set_text(state_lbl, buf);
     } else {
       lv_label_set_text(state_lbl, "Laser OFF  ·  demo");
@@ -963,6 +965,10 @@ static void setup_path_preview(lv_obj_t *parent, int y, int w, int h) {
 }
 
 void ui_pendant_create() {
+  const pendant_cfg_t *cfg = pendant_cfg_get();
+  laser_feed_pct = cfg->laser_feed_pct;
+  laser_s_max = cfg->laser_s_max > 0.0f ? cfg->laser_s_max : 1000.0f;
+
   scr = lv_obj_create(NULL);
   lv_obj_set_style_bg_color(scr, lv_color_hex(0x404040), 0);
   lv_obj_set_style_pad_all(scr, 0, 0);
@@ -1336,7 +1342,7 @@ void ui_pendant_create() {
   lv_obj_set_style_bg_opa(settings_panel, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(settings_panel, 0, 0);
   lv_obj_set_style_pad_all(settings_panel, 8, 0);
-  lv_obj_clear_flag(settings_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
 
   {
@@ -1373,42 +1379,56 @@ void ui_pendant_create() {
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
     lv_obj_set_pos(hint, 4, 140);
 
+    const pendant_cfg_t *c = pendant_cfg_get();
+
+    lv_obj_t *board = lv_label_create(settings_panel);
+    char bbuf[200];
+    snprintf(bbuf, sizeof(bbuf),
+             "BOARD  %s\n%s\nUART IO%d→TX IO%d→RX @ %d\nLaser dout P%d  $30=S%.0f\ncfg: %s",
+             c->board_id, c->board_name, c->uart_tx, c->uart_rx, c->uart_baud,
+             c->laser_enable_dout, c->laser_s_max, c->source);
+    lv_label_set_text(board, bbuf);
+    lv_obj_set_style_text_font(board, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(board, lv_color_hex(0xdddddd), 0);
+    lv_obj_set_pos(board, 4, 220);
+
     lv_obj_t *hw = lv_label_create(settings_panel);
     char hwbuf[160];
-#if (HANDWHEEL_A_GPIO >= 0) && (HANDWHEEL_B_GPIO >= 0)
-    snprintf(hwbuf, sizeof(hwbuf), "HANDWHEEL GPIO\nA=IO%d  B=IO%d\n%s", HANDWHEEL_A_GPIO,
-             HANDWHEEL_B_GPIO, handwheel_hw_present() ? "ISR armed" : "not armed");
-#else
-    snprintf(hwbuf, sizeof(hwbuf),
-             "HANDWHEEL GPIO\nPins disabled (−1)\nPrefer I2C expander when TF card is on");
-#endif
+    if (c->handwheel_a >= 0 && c->handwheel_b >= 0) {
+      snprintf(hwbuf, sizeof(hwbuf), "HANDWHEEL GPIO\nA=IO%d  B=IO%d\n%s", c->handwheel_a,
+               c->handwheel_b, handwheel_hw_present() ? "ISR armed" : "not armed");
+    } else {
+      snprintf(hwbuf, sizeof(hwbuf),
+               "HANDWHEEL GPIO\nOff (handwheel.a/b −1)\nEdit SD:/settings.cfg · reboot");
+    }
     lv_label_set_text(hw, hwbuf);
     lv_obj_set_style_text_font(hw, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hw, lv_color_hex(0xaaaaaa), 0);
-    lv_obj_set_pos(hw, 4, 230);
+    lv_obj_set_pos(hw, 4, 330);
 
     lv_obj_t *exp = lv_label_create(settings_panel);
     char expbuf[160];
-#if defined(I2C_MPG_ENABLE) && I2C_MPG_ENABLE
-    snprintf(expbuf, sizeof(expbuf), "I2C MPG  0x%02X\n%s\nP0/P1 wheel  P2–P4 axis  P5 step",
-             I2C_MPG_ADDR, i2c_mpg_present() ? "present" : "not found");
-#else
-    snprintf(expbuf, sizeof(expbuf),
-             "I2C MPG expander\nDisabled (I2C_MPG_ENABLE=0)\nPCF8574 on SDA15/SCL16");
-#endif
+    if (c->i2c_mpg_enable) {
+      snprintf(expbuf, sizeof(expbuf), "I2C MPG  0x%02X\n%s\nP0/P1 wheel  P2–P4 axis  P5 step",
+               c->i2c_mpg_addr, i2c_mpg_present() ? "present" : "not found");
+    } else {
+      snprintf(expbuf, sizeof(expbuf),
+               "I2C MPG expander\nOff (i2c_mpg.enable 0)\nPCF8574 on SDA15/SCL16");
+    }
     lv_label_set_text(exp, expbuf);
     lv_obj_set_style_text_font(exp, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(exp, lv_color_hex(0xaaaaaa), 0);
-    lv_obj_set_pos(exp, 4, 300);
+    lv_obj_set_pos(exp, 4, 400);
 
     lv_obj_t *sd = lv_label_create(settings_panel);
-    char sdbuf[128];
-    snprintf(sdbuf, sizeof(sdbuf), "JOB STORE\nLittleFS %s\nSD/TF %s (DIP TF mode)",
+    char sdbuf[160];
+    snprintf(sdbuf, sizeof(sdbuf),
+             "JOB STORE\nLittleFS %s\nSD/TF %s\nEdit pins: SD:/settings.cfg",
              job_store_lfs_ok() ? "ok" : "—", job_store_sd_ok() ? "mounted" : "—");
     lv_label_set_text(sd, sdbuf);
     lv_obj_set_style_text_font(sd, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(sd, lv_color_hex(0xaaaaaa), 0);
-    lv_obj_set_pos(sd, 4, 380);
+    lv_obj_set_pos(sd, 4, 480);
     refresh_transport_ui();
   }
 

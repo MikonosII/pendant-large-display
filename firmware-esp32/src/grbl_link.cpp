@@ -1,5 +1,5 @@
 #include "grbl_link.h"
-#include "pins_config.h"
+#include "pendant_cfg.h"
 #include "mpg_framed.h"
 
 #include <Arduino.h>
@@ -19,7 +19,7 @@ static const uint8_t kOvBytes[] = {
     0x9A, 0x9B, 0x9C, 0x9D, 0xA0, 0xA1,
 };
 
-static HardwareSerial GrblSerial(GRBL_UART_NUM);
+static HardwareSerial *GrblSerial = nullptr;
 
 static grbl_status_t g_status;
 static char rx_line[192];
@@ -35,8 +35,8 @@ static mpg_framed_t *framed = nullptr;
 // --- framed HW glue ---
 static bool hw_read(void *ctx, uint8_t *byte) {
   (void)ctx;
-  if (GrblSerial.available() <= 0) return false;
-  int c = GrblSerial.read();
+  if (!GrblSerial || GrblSerial->available() <= 0) return false;
+  int c = GrblSerial->read();
   if (c < 0) return false;
   *byte = (uint8_t)c;
   return true;
@@ -44,7 +44,8 @@ static bool hw_read(void *ctx, uint8_t *byte) {
 
 static bool hw_write(void *ctx, const uint8_t *data, uint32_t len) {
   (void)ctx;
-  return GrblSerial.write(data, len) == len;
+  if (!GrblSerial) return false;
+  return GrblSerial->write(data, len) == len;
 }
 
 static bool hw_tx_idle(void *ctx) {
@@ -120,8 +121,9 @@ static void drain_rx() {
     while (mpg_framed_read(framed, &b)) feed_byte(b);
     return;
   }
-  while (GrblSerial.available() > 0) {
-    int c = GrblSerial.read();
+  if (!GrblSerial) return;
+  while (GrblSerial->available() > 0) {
+    int c = GrblSerial->read();
     if (c < 0) break;
     feed_byte((uint8_t)c);
   }
@@ -138,7 +140,7 @@ static void send_rt(uint8_t b) {
     Serial.println("[grbl] framed RT write busy");
     return;
   }
-  GrblSerial.write(b);
+  if (GrblSerial) GrblSerial->write(b);
 }
 
 static void send_line(const char *s) {
@@ -158,7 +160,7 @@ static void send_line(const char *s) {
     Serial.println("[grbl] framed Dat write busy");
     return;
   }
-  GrblSerial.write((const uint8_t *)buf, n);
+  if (GrblSerial) GrblSerial->write((const uint8_t *)buf, n);
 }
 
 static void ensure_framed(bool enable) {
@@ -174,7 +176,7 @@ static void ensure_framed(bool enable) {
         use_framed = false;
         return;
       }
-      mpg_framed_set_baud(framed, GRBL_UART_BAUD);
+      mpg_framed_set_baud(framed, (uint32_t)pendant_cfg_get()->uart_baud);
     } else {
       mpg_framed_reset(framed);
     }
@@ -186,9 +188,11 @@ static void ensure_framed(bool enable) {
 
 void grbl_link_begin(void) {
   status_reset_defaults();
-  GrblSerial.begin(GRBL_UART_BAUD, SERIAL_8N1, GRBL_UART_RX, GRBL_UART_TX);
+  const pendant_cfg_t *c = pendant_cfg_get();
+  if (!GrblSerial) GrblSerial = new HardwareSerial(c->uart_num);
+  GrblSerial->begin(c->uart_baud, SERIAL_8N1, c->uart_rx, c->uart_tx);
   delay(20);
-  while (GrblSerial.available()) GrblSerial.read();
+  while (GrblSerial->available()) GrblSerial->read();
 
 #if defined(GRBL_TRANSPORT_FRAMED) && GRBL_TRANSPORT_FRAMED
   ensure_framed(true);
@@ -196,8 +200,8 @@ void grbl_link_begin(void) {
   ensure_framed(false);
 #endif
 
-  Serial.printf("[grbl] UART%d TX=%d RX=%d @ %d  mode=%s\n", GRBL_UART_NUM, GRBL_UART_TX,
-                GRBL_UART_RX, GRBL_UART_BAUD, use_framed ? "framed" : "plain");
+  Serial.printf("[grbl] UART%d TX=%d RX=%d @ %d  mode=%s\n", c->uart_num, c->uart_tx, c->uart_rx,
+                c->uart_baud, use_framed ? "framed" : "plain");
   last_status_tx_ms = 0;
   last_status_rx_ms = 0;
   want_mpg = true;
@@ -239,7 +243,9 @@ bool grbl_link_framed(void) { return use_framed; }
 void grbl_link_set_framed(bool framed_on) {
   if (framed_on == use_framed) return;
   // Flush UART junk when switching modes
-  while (GrblSerial.available()) GrblSerial.read();
+  if (GrblSerial) {
+    while (GrblSerial->available()) GrblSerial->read();
+  }
   ensure_framed(framed_on);
   ever_seen = false;
   last_status_rx_ms = 0;
@@ -320,7 +326,7 @@ bool grbl_link_laser_enable(void) {
   if (strcmp(g_status.state, "Idle") != 0) return false;
   // Immediate digital-out on: controller should pull PSU K+ to GND when active.
   char cmd[24];
-  snprintf(cmd, sizeof(cmd), "M64P%d\r", (int)LASER_ENABLE_DOUT);
+  snprintf(cmd, sizeof(cmd), "M64P%d\r", pendant_cfg_get()->laser_enable_dout);
   send_line(cmd);
   Serial.printf("[grbl] laser enable K+  %s", cmd);
   return true;
@@ -339,9 +345,10 @@ bool grbl_link_laser_on(float s_cmd) {
 bool grbl_link_laser_off(void) {
   if (!grbl_link_online()) return false;
   char cmd[24];
-  snprintf(cmd, sizeof(cmd), "M65P%d\r", (int)LASER_ENABLE_DOUT);
+  int dout = pendant_cfg_get()->laser_enable_dout;
+  snprintf(cmd, sizeof(cmd), "M65P%d\r", dout);
   send_line(cmd);  // open K+ enable (inhibit)
   send_line("M5\r");  // also drop spindle/PWM if armed
-  Serial.printf("[grbl] laser inhibit K+  M65P%d + M5\n", (int)LASER_ENABLE_DOUT);
+  Serial.printf("[grbl] laser inhibit K+  M65P%d + M5\n", dout);
   return true;
 }

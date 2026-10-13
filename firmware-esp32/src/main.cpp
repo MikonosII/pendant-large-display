@@ -14,6 +14,7 @@
 #include "handwheel.h"
 #include "i2c_mpg_io.h"
 #include "job_store.h"
+#include "pendant_cfg.h"
 #include "ui_pendant.h"
 
 static LGFX gfx;
@@ -91,6 +92,9 @@ void setup() {
   gfx.fillScreen(TFT_BLACK);
 
   backlight_init();
+
+  // Runtime board / pin / laser settings (LittleFS + optional SD /settings.cfg)
+  pendant_cfg_begin();
 
   lv_init();
 

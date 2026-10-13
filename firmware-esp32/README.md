@@ -54,22 +54,32 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 
 LightBurn does **not** auto-fill the pendant preview: LB streams G-code on its own link to grblHAL. The pendant preview is from NC loaded/parsed on the pendant (embedded sample, LittleFS/SD `/jobs`, or a file in the lab). Use **START** after the controller has the job (or is in Hold) to cycle-start from the device.
 
-### User settings (edit before flash)
+### Runtime settings (edit the file — no rebuild)
 
-All wiring / laser / UART / handwheel / SD knobs live in one file:
+After you flash the binary (+ filesystem), pin and laser setup come from a text file:
 
-**[`include/user_settings.h`](include/user_settings.h)**
+1. **Preferred:** put **`/settings.cfg`** on the TF/SD card (edit on a PC, reboot).
+2. Or edit LittleFS **`/settings.cfg`** (seeded from [`data/settings.cfg`](data/settings.cfg) via `pio run -t uploadfs`).
 
-| Define | Default | Meaning |
-|--------|---------|---------|
-| `GRBL_UART_TX` / `RX` / `BAUD` | 20 / 19 / 115200 | CrowPanel UART1-OUT → controller |
-| `LASER_ENABLE_DOUT` | `0` | grblHAL dout `n` for K+ via `M64 Pn` / `M65 Pn` |
-| `LASER_FEED_PCT` | `5.0` | FEED tab default power (%) |
-| `LASER_S_MAX` | `1000` | Matches grblHAL `$30` (100% → this S) |
-| `HANDWHEEL_*` / `I2C_MPG_*` | off | Optional wheel GPIO or PCF8574 |
-| `JOB_STORE_SD` / `SD_SPI_*` | on / IO4–6 | TF card job store |
+```text
+board crowpanel-advance-5
+laser.enable_dout 0
+laser.feed_pct 5.0
+laser.s_max 1000
+uart.baud 115200
+```
 
-Full pin map: [`WIRING.md`](WIRING.md).
+| Key | Meaning |
+|-----|---------|
+| `board` | Built-in profile: `crowpanel-advance-5` or `crowpanel-advance-7` |
+| `laser.enable_dout` | grblHAL dout `n` for K+ (`M64 Pn` / `M65 Pn`) |
+| `laser.feed_pct` / `laser.s_max` | FEED default % and `$30` scale |
+| `uart.tx` / `rx` / `baud` | CrowPanel UART1-OUT → controller |
+| `handwheel.*` / `i2c_mpg.*` / `sd.*` | Optional wheel / expander / TF pins |
+
+Board pin maps also live under [`data/boards/`](data/boards/). SETTINGS tab shows the active board and which file won (`sd:` vs `lfs:`).
+
+**Note:** LCD panel timing (ST7262 vs GW1076) still comes from which firmware env you flashed; only UART/laser/handwheel/SD pins are runtime. Full wiring: [`WIRING.md`](WIRING.md).
 
 ### Wire to grblHAL (SKR / controller)
 
@@ -80,7 +90,7 @@ Full pin map: [`WIRING.md`](WIRING.md).
 | GND | GND |
 | 3.3 V logic only | — |
 
-* Baud **115200** 8N1 (override in `user_settings.h`)
+* Baud **115200** 8N1 (override with `uart.baud` in `/settings.cfg`)
 * Protocol: plain Grbl status by default (`?` / `<Idle\|WPos:…\|FS:…>`) + realtime `0x8B` MPG toggle
 * Optional **framed** transport (`Plugin_mpg_transport`): toggle in **SETTINGS → UART TRANSPORT**, or build with `-DGRBL_TRANSPORT_FRAMED=1`. Both ends must match.
 * Put the S0/S1 function switches in a mode that leaves UART1 free (not mic/I2S on IO19/IO20)
@@ -94,33 +104,25 @@ g++ -std=c++17 -I include -o /tmp/test_gcode_path \
   test/test_gcode_path.cpp src/gcode_path.cpp && /tmp/test_gcode_path
 g++ -std=c++17 -I include -o /tmp/test_mpg_framed \
   test/test_mpg_framed.cpp src/mpg_framed.cpp && /tmp/test_mpg_framed
+g++ -std=c++17 -I include -DPENDANT_CFG_HOST_TEST -o /tmp/test_pendant_cfg \
+  test/test_pendant_cfg.cpp src/pendant_cfg_parse.cpp && /tmp/test_pendant_cfg
 g++ -std=c++17 -I include -o /tmp/test_i2c_mpg_io \
   test/test_i2c_mpg_io.cpp && /tmp/test_i2c_mpg_io
 ```
 
 ### Handwheel (MPG encoder)
 
-Stock pendant uses a **100 PPR** quadrature wheel on a timer channel. CrowPanel Advance has almost no free GPIO after the RGB bus + UART1, so A/B default to **disabled (`-1`)**.
+Stock pendant uses a **100 PPR** quadrature wheel. CrowPanel Advance has almost no free GPIO after the RGB bus + UART1, so A/B default to **disabled (`-1`)** in `/settings.cfg`.
 
-**Option A — direct GPIO** (when TF/speaker are unused):
+**Option A — direct GPIO** (when TF/speaker are unused): set `handwheel.a 4` / `handwheel.b 5` in `/settings.cfg`, wire A/B + GND, reboot.
 
-1. Free two 3.3 V inputs (common: reclaim **IO4 / IO5** — check rear DIP switches).
-2. Build with `-DHANDWHEEL_A_GPIO=4 -DHANDWHEEL_B_GPIO=5`.
-3. Wire A/B (and GND). Internal pull-ups are enabled.
-
-**Option B — I2C expander** (preferred when the TF card is in use — IO4–6 are SD):
-
-1. Wire a **PCF8574** (or compatible) on the touch I2C bus (**SDA15 / SCL16**), address `0x20` by default.
-2. Build with `-DI2C_MPG_ENABLE=1` (optional `-DI2C_MPG_ADDR=0x20`).
-3. Bit map: **P0/P1** = wheel A/B, **P2–P4** = axis X/Y/Z, **P5** = step-size cycle (active-low).
-
-With MPG on, each detent jogs the active axis by the selected step size. Soft −/+ Jog is the lab stand-in.
+**Option B — I2C expander** (preferred when TF uses IO4–6): set `i2c_mpg.enable 1` (and optional `i2c_mpg.addr 0x20`). PCF8574 on SDA15/SCL16 — **P0/P1** wheel, **P2–P4** axis, **P5** step (active-low).
 
 ### SD / LittleFS jobs
 
-* LittleFS is mounted at boot (`board_build.filesystem = littlefs`). Seed files via `pio run -t uploadfs` from `data/jobs/`.
-* SD/TF uses SPI MOSI6/MISO4/SCK5 (CS often hard-tied). Set rear DIP switches to a **TF-card** mode. Disable with `-DJOB_STORE_SD=0` if you reclaim those pins for a GPIO handwheel.
-* GCODE tab lists embedded sample + `/jobs` on each mounted store; tap a row to parse into the MPG preview.
+* LittleFS is mounted at boot. Seed with `pio run -t uploadfs` from `data/` (includes `settings.cfg`, `boards/`, `jobs/`).
+* SD/TF SPI pins come from `/settings.cfg` (`sd.*`). Set rear DIP to a **TF-card** mode. Set `sd.enable 0` to reclaim pins for a GPIO handwheel.
+* GCODE tab lists embedded sample + `/jobs` on each mounted store.
 
 ## Next (not in this slice)
 

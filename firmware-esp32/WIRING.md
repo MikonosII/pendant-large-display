@@ -1,6 +1,6 @@
 # Wiring — CrowPanel ↔ grblHAL ↔ CO2 PSU
 
-**Tunable pin / port numbers:** edit [`include/user_settings.h`](include/user_settings.h) (UART, `LASER_ENABLE_DOUT`, `LASER_FEED_PCT`, `LASER_S_MAX`, handwheel, SD), then rebuild. Do not hunt through `pins_config.h` for those.
+**Tunable pin / port numbers (no rebuild):** edit **`/settings.cfg`** on the TF/SD card (preferred) or LittleFS. Set `board crowpanel-advance-5` (or `-7`) and optional overrides (`laser.enable_dout`, `uart.*`, …). Template: [`data/settings.cfg`](data/settings.cfg). Flash filesystem once with `pio run -t uploadfs` if you use LittleFS only.
 
 Three boxes. The pendant only talks **UART** to the controller. The controller alone drives the laser PSU (**K+** enable + **IN** PWM).
 
@@ -48,8 +48,8 @@ Assumes a common LPS where **shorting K+ to GND** arms/enables the beam (your �
 | Laser power | Spindle **PWM** | **IN** | `M3 S…` / `M5` (FEED LASER ON/OFF) |
 | Laser enable | Digital out **Pn** | **K+** (via relay / open-drain to GND) | `M64 Pn` / `M65 Pn` |
 
-Firmware default in `user_settings.h`: `LASER_ENABLE_DOUT=0` → **`M64 P0` / `M65 P0`**.  
-Map grblHAL digital output **0** to the pin that drives the K+ path, or change that define and rebuild.
+Runtime default: `laser.enable_dout 0` → **`M64 P0` / `M65 P0`**.  
+Map grblHAL digital output **0** to the pin that drives the K+ path, or change `laser.enable_dout` in `/settings.cfg` and reboot.
 
 ### K+ enable circuit (required)
 
