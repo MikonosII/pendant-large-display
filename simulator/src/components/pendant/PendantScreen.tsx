@@ -124,7 +124,9 @@ export function PendantScreen({ profile, scale }: Props) {
         style={{
           width: profile.logicalW,
           height: profile.logicalH,
-          zoom: scale,
+          // transform (not CSS zoom) so hit-testing matches the scaled paint box
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
         }}
       >
         <div
