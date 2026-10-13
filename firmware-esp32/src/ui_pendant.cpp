@@ -1314,20 +1314,44 @@ void ui_pendant_create() {
   lv_obj_set_style_pad_all(mpg_panel, 0, 0);
   lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Steps sit just above the global Hold / ±Jog soft row; two macro rows above steps
-  const int step_h = 44;
-  const int macro_h = 44;
+  // Bottom chrome: steps + 2×4 macros + laser test — sized to fill below telemetry.
+  // Map takes the leftover height above DRO/tele.
+  const int panel_h = content_h - 8;
+  const int dro_h = 72;
+  const int tele_h = 64;
+  const int section_gap = 6;
   const int macro_rows = (MACRO_MAX + MACRO_COLS - 1) / MACRO_COLS;
-  const int macro_gap = 3;
-  const int step_y = (content_h - 8) - step_h;
-  const int macro_block_h = macro_rows * macro_h + (macro_rows - 1) * macro_gap;
-  const int macro_y0 = step_y - macro_block_h - 4;
-  const int map_h_px = 280;
+  const int macro_gap = 4;
+  const int stack_gap = 4;  // laser↔macros, macros↔steps
+
+  // Prefer tall touch targets; absorb leftover into map.
+  int step_h = 56;
+  int macro_h = 58;
+  int laser_h = 56;
+  int macro_block_h = macro_rows * macro_h + (macro_rows - 1) * macro_gap;
+  int chrome_h = laser_h + stack_gap + macro_block_h + stack_gap + step_h;
+  int fixed_mid = dro_h + section_gap + tele_h + section_gap;  // DRO + tele + gaps
+  int map_h_px = panel_h - fixed_mid - chrome_h - section_gap;
+  if (map_h_px < 180) {
+    // Narrow panels: shrink chrome a bit so the map stays usable
+    step_h = 48;
+    macro_h = 50;
+    laser_h = 48;
+    macro_block_h = macro_rows * macro_h + (macro_rows - 1) * macro_gap;
+    chrome_h = laser_h + stack_gap + macro_block_h + stack_gap + step_h;
+    map_h_px = panel_h - fixed_mid - chrome_h - section_gap;
+    if (map_h_px < 120) map_h_px = 120;
+  }
+
+  const int step_y = panel_h - step_h;
+  const int macro_y0 = step_y - macro_block_h - stack_gap;
+  const int laser_y = macro_y0 - stack_gap - laser_h;
+
   setup_live_map(mpg_panel, 0, UI_H_RES - 12, map_h_px);
 
   // Denser 3-column DRO under the live map
-  const int dro_y = map_h_px + 6;
-  const int row_h = 72;
+  const int dro_y = map_h_px + section_gap;
+  const int row_h = dro_h;
   const int col_w = (UI_H_RES - 12 - 8) / 3;
   for (int i = 0; i < 3; i++) {
     axis_rows[i] = lv_btn_create(mpg_panel);
@@ -1363,9 +1387,9 @@ void ui_pendant_create() {
     lv_obj_add_event_cb(zero, on_zero, LV_EVENT_CLICKED, (void *)(intptr_t)i);
   }
 
-  const int tele_y = dro_y + row_h + 6;
+  const int tele_y = dro_y + row_h + section_gap;
   lv_obj_t *tele = lv_obj_create(mpg_panel);
-  lv_obj_set_size(tele, UI_H_RES - 12, 64);
+  lv_obj_set_size(tele, UI_H_RES - 12, tele_h);
   lv_obj_set_pos(tele, 0, tele_y);
   lv_obj_set_style_bg_opa(tele, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(tele, 0, 0);
@@ -1381,14 +1405,13 @@ void ui_pendant_create() {
 
   // Laser TEST toggle — K+ enable only (PWM/power lives on FEED tab).
   // No MPG START: LightBurn owns cycle start / job run on its own link.
-  const int laser_y = tele_y + 70;
   laser_test_btn = lv_btn_create(mpg_panel);
-  lv_obj_set_size(laser_test_btn, UI_H_RES - 12, 44);
+  lv_obj_set_size(laser_test_btn, UI_H_RES - 12, laser_h);
   lv_obj_set_pos(laser_test_btn, 0, laser_y);
   lv_obj_set_style_radius(laser_test_btn, 2, 0);
   lv_obj_set_style_text_color(laser_test_btn, lv_color_hex(0xffffff), 0);
   laser_test_lbl = lv_label_create(laser_test_btn);
-  lv_obj_set_style_text_font(laser_test_lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(laser_test_lbl, &lv_font_montserrat_20, 0);
   lv_obj_center(laser_test_lbl);
   lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
   refresh_laser_enable_ui();
@@ -1406,7 +1429,7 @@ void ui_pendant_create() {
                      macro_y0 + (int)row * (macro_h + macro_gap));
       lv_obj_t *lbl = lv_label_create(macro_btns[i]);
       lv_label_set_text(lbl, m ? m->name : "?");
-      lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+      lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, 0);
       lv_obj_center(lbl);
       lv_obj_add_event_cb(macro_btns[i], on_macro, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
       lv_obj_add_event_cb(macro_btns[i], on_macro_long, LV_EVENT_LONG_PRESSED,
@@ -1424,6 +1447,7 @@ void ui_pendant_create() {
     snprintf(buf, sizeof(buf), "%g", k_steps[i]);
     lv_obj_t *lbl = lv_label_create(step_btns[i]);
     lv_label_set_text(lbl, buf);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, 0);
     lv_obj_center(lbl);
     style_chrome_btn(step_btns[i], i == step_idx);
     lv_obj_add_event_cb(step_btns[i], on_step, LV_EVENT_CLICKED, (void *)(intptr_t)i);

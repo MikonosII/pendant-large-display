@@ -569,7 +569,7 @@ function MachineMap({
   const hy = Math.min(bedY, Math.max(0, y));
 
   return (
-    <div className="relative h-[280px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
+    <div className="relative h-[210px] shrink-0 overflow-hidden rounded-sm border border-[#111] bg-[#141414]">
       <div className="absolute left-1.5 top-1 z-10 text-[10px] text-zinc-400">
         WPos map · {bedX}×{bedY} mm
       </div>
@@ -881,7 +881,7 @@ function MpgView({
         type="button"
         onClick={onLaserTest}
         className={cn(
-          "mt-0.5 w-full rounded-sm border py-2.5 text-[11px] font-bold tracking-wide text-white transition-colors",
+          "mt-0.5 w-full rounded-sm border py-3.5 text-sm font-bold tracking-wide text-white transition-colors",
           laserKOn
             ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
             : "border-orange-950 bg-orange-950/80"
@@ -891,7 +891,7 @@ function MpgView({
       </button>
 
       <div className="mt-auto space-y-1">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-4 gap-1.5">
           {macros.map((m, idx) => {
             const teaching = teachSlot === idx;
             const taught = !!m.gcode;
@@ -900,7 +900,7 @@ function MpgView({
                 key={`${m.name}-${idx}`}
                 type="button"
                 className={cn(
-                  "rounded-sm border py-2 text-[11px] font-semibold text-zinc-100 select-none",
+                  "rounded-sm border py-3.5 text-sm font-semibold text-zinc-100 select-none",
                   teaching
                     ? "border-amber-400 bg-amber-700"
                     : taught
@@ -955,14 +955,14 @@ function MpgView({
         <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
           Step (mm)
         </div>
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-4 gap-1.5">
           {steps.map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => onStep(s)}
               className={cn(
-                "rounded-sm border py-2 text-[11px] font-semibold",
+                "rounded-sm border py-3.5 text-sm font-semibold",
                 step === s
                   ? "border-sky-400 bg-sky-700 text-white"
                   : "border-[#222] bg-[#2f2f2f] text-zinc-200"
