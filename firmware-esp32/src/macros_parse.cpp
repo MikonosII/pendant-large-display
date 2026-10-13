@@ -1,6 +1,5 @@
 #include "macros.h"
 
-#include <ctype.h>
 #include <string.h>
 
 static char *trim(char *s) {
@@ -32,11 +31,11 @@ unsigned macros_parse_text(const char *text, macro_t *out, unsigned max_out) {
     *eq = 0;
     char *name = trim(s);
     char *gcode = trim(eq + 1);
-    if (!name[0] || !gcode[0]) continue;
+    if (!name[0]) continue;
 
     memset(&out[n], 0, sizeof(out[n]));
     strncpy(out[n].name, name, MACRO_NAME_LEN - 1);
-    strncpy(out[n].gcode, gcode, MACRO_GCODE_LEN - 1);
+    if (gcode[0]) strncpy(out[n].gcode, gcode, MACRO_GCODE_LEN - 1);
     n++;
   }
   return n;

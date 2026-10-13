@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageId, ScreenProfile } from "@/lib/screen-profiles";
 import { PAGES } from "@/lib/screen-profiles";
 import {
@@ -12,6 +12,32 @@ import { SAMPLE_JOB_NAME, SAMPLE_JOB_NC } from "@/lib/sample-job";
 import { cn } from "@/lib/utils";
 
 type Axis = { name: string; wpos: number; wco: number };
+
+/** Mirrors firmware /macros.cfg — names editable there; positions taught on device. */
+type MacroSlot = { name: string; gcode: string };
+
+const INITIAL_MACROS: MacroSlot[] = [
+  { name: "XY0", gcode: "" },
+  { name: "Park", gcode: "" },
+  { name: "Corner", gcode: "" },
+  { name: "Focus", gcode: "" },
+];
+
+function parseGoto(gcode: string): { x?: number; y?: number; z?: number } | null {
+  if (!gcode.trim()) return null;
+  const out: { x?: number; y?: number; z?: number } = {};
+  const re = /([XYZ])\s*(-?\d+(?:\.\d+)?)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(gcode))) {
+    const v = Number(m[2]);
+    if (m[1].toUpperCase() === "X") out.x = v;
+    if (m[1].toUpperCase() === "Y") out.y = v;
+    if (m[1].toUpperCase() === "Z") out.z = v;
+  }
+  return out.x !== undefined || out.y !== undefined || out.z !== undefined
+    ? out
+    : null;
+}
 
 /** Start near the sample job so the laser cursor is in view. */
 const INITIAL_AXES: Axis[] = [
@@ -53,6 +79,9 @@ export function PendantScreen({ profile }: Props) {
   const [probeResult, setProbeResult] = useState("Last [PRB:]: none");
   const [lfsOk] = useState(true);
   const [sdOk] = useState(false);
+  const [macros, setMacros] = useState(INITIAL_MACROS);
+  const [teachSlot, setTeachSlot] = useState(-1);
+  const [statusHint, setStatusHint] = useState("");
 
   const bumpOv = (
     kind: "feed" | "speed" | "rapid",
@@ -155,7 +184,7 @@ export function PendantScreen({ profile }: Props) {
               Idle
             </div>
             <div className="mt-0.5 truncate text-[9px] text-zinc-200">
-              Laser · mm · {profile.shortName}
+              {statusHint || `Laser · mm · ${profile.shortName}`}
             </div>
           </div>
           <button
@@ -200,6 +229,55 @@ export function PendantScreen({ profile }: Props) {
               startFlash={startFlash}
               laserKOn={laserKOn}
               onLaserTest={() => setLaserKOn((v) => !v)}
+              macros={macros}
+              teachSlot={teachSlot}
+              onMacroTeach={(idx) => {
+                setTeachSlot(idx);
+                setStatusHint(
+                  `Teach ${macros[idx]?.name ?? "?"} — jog, then tap`
+                );
+              }}
+              onMacroCapture={(idx) => {
+                const gcode = `G90 G0 X${axes[0].wpos.toFixed(3)} Y${axes[1].wpos.toFixed(3)} Z${axes[2].wpos.toFixed(3)}`;
+                setMacros((prev) =>
+                  prev.map((m, i) => (i === idx ? { ...m, gcode } : m))
+                );
+                setTeachSlot(-1);
+                setStatusHint(
+                  `Saved ${macros[idx]?.name ?? "?"}  ${axes[0].wpos.toFixed(2)}, ${axes[1].wpos.toFixed(2)}, ${axes[2].wpos.toFixed(2)}`
+                );
+              }}
+              onMacroCancel={() => {
+                setTeachSlot(-1);
+                setStatusHint("Teach cancelled");
+              }}
+              onMacroRun={(idx) => {
+                const m = macros[idx];
+                if (!m?.gcode) {
+                  setStatusHint("Empty — long-press to teach");
+                  return;
+                }
+                const goto = parseGoto(m.gcode);
+                if (goto) {
+                  setAxes((prev) =>
+                    prev.map((a, i) => {
+                      const v =
+                        i === 0
+                          ? goto.x
+                          : i === 1
+                            ? goto.y
+                            : goto.z;
+                      return v !== undefined
+                        ? {
+                            ...a,
+                            wpos: Math.round(v * 1000) / 1000,
+                          }
+                        : a;
+                    })
+                  );
+                }
+                setStatusHint(`Macro · ${m.name}`);
+              }}
             />
           )}
           {page === "OVERRIDE" && (
@@ -678,6 +756,12 @@ function MpgView({
   startFlash,
   laserKOn,
   onLaserTest,
+  macros,
+  teachSlot,
+  onMacroTeach,
+  onMacroCapture,
+  onMacroCancel,
+  onMacroRun,
 }: {
   axes: Axis[];
   activeAxis: number;
@@ -697,9 +781,23 @@ function MpgView({
   startFlash: boolean;
   laserKOn: boolean;
   onLaserTest: () => void;
+  macros: MacroSlot[];
+  teachSlot: number;
+  onMacroTeach: (idx: number) => void;
+  onMacroCapture: (idx: number) => void;
+  onMacroCancel: () => void;
+  onMacroRun: (idx: number) => void;
 }) {
   const steps = [0.01, 0.1, 1, 10];
   const laserOn = laserCmd > 0;
+  const longTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ignoreClick = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (longTimer.current) clearTimeout(longTimer.current);
+    };
+  }, []);
 
   return (
     <div className="flex h-full flex-col gap-1">
@@ -812,16 +910,65 @@ function MpgView({
 
       <div className="mt-auto space-y-1">
         <div className="grid grid-cols-4 gap-1">
-          {["XY0", "Park", "Z0", "Unlock"].map((name) => (
-            <button
-              key={name}
-              type="button"
-              className="rounded-sm border border-[#222] bg-[#2a2a2a] py-2.5 text-[11px] font-semibold text-zinc-100"
-              title={`Lab mock — device sends /macros.cfg entry "${name}"`}
-            >
-              {name}
-            </button>
-          ))}
+          {macros.map((m, idx) => {
+            const teaching = teachSlot === idx;
+            const taught = !!m.gcode;
+            return (
+              <button
+                key={`${m.name}-${idx}`}
+                type="button"
+                className={cn(
+                  "rounded-sm border py-2.5 text-[11px] font-semibold text-zinc-100 select-none",
+                  teaching
+                    ? "border-amber-400 bg-amber-700"
+                    : taught
+                      ? "border-sky-700 bg-[#2a3a4a]"
+                      : "border-[#222] bg-[#2a2a2a]"
+                )}
+                title={
+                  teaching
+                    ? "Tap again to save WPos"
+                    : taught
+                      ? m.gcode
+                      : "Long-press to teach · names from /macros.cfg"
+                }
+                onPointerDown={() => {
+                  ignoreClick.current = false;
+                  if (longTimer.current) clearTimeout(longTimer.current);
+                  longTimer.current = setTimeout(() => {
+                    ignoreClick.current = true;
+                    onMacroTeach(idx);
+                  }, 550);
+                }}
+                onPointerUp={() => {
+                  if (longTimer.current) {
+                    clearTimeout(longTimer.current);
+                    longTimer.current = null;
+                  }
+                }}
+                onPointerLeave={() => {
+                  if (longTimer.current) {
+                    clearTimeout(longTimer.current);
+                    longTimer.current = null;
+                  }
+                }}
+                onClick={() => {
+                  if (ignoreClick.current) {
+                    ignoreClick.current = false;
+                    return;
+                  }
+                  if (teachSlot >= 0) {
+                    if (teachSlot === idx) onMacroCapture(idx);
+                    else onMacroCancel();
+                    return;
+                  }
+                  onMacroRun(idx);
+                }}
+              >
+                {m.name}
+              </button>
+            );
+          })}
         </div>
         <div className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-300">
           Step (mm)

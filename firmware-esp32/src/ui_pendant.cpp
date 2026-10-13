@@ -523,14 +523,79 @@ static void on_laser_test(lv_event_t *e) {
   set_laser_k(!laser_k_on, false);
 }
 
+static bool macro_ignore_click = false;
+
+static void refresh_macro_btns(void) {
+  int teach = macros_teach_slot();
+  for (unsigned i = 0; i < MACRO_MAX; i++) {
+    if (!macro_btns[i]) continue;
+    const macro_t *m = macros_get(i);
+    lv_obj_t *lbl = lv_obj_get_child(macro_btns[i], 0);
+    if (lbl && m) lv_label_set_text(lbl, m->name);
+    bool taught = m && m->gcode[0];
+    style_chrome_btn(macro_btns[i], (int)i == teach || taught);
+    if ((int)i == teach) {
+      lv_obj_set_style_bg_color(macro_btns[i], lv_color_hex(0xb45309), 0);
+      lv_obj_set_style_border_color(macro_btns[i], lv_color_hex(0xfbbf24), 0);
+    }
+  }
+}
+
+static void on_macro_long(lv_event_t *e) {
+  unsigned idx = (unsigned)(uintptr_t)lv_event_get_user_data(e);
+  if (!macros_teach_begin(idx)) {
+    if (state_lbl) lv_label_set_text(state_lbl, "Can't teach this macro");
+    return;
+  }
+  macro_ignore_click = true;  // swallow the release click after long-press
+  const macro_t *m = macros_get(idx);
+  if (state_lbl) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Teach %s — jog, then tap", m ? m->name : "?");
+    lv_label_set_text(state_lbl, buf);
+  }
+  refresh_macro_btns();
+}
+
 static void on_macro(lv_event_t *e) {
   unsigned idx = (unsigned)(uintptr_t)lv_event_get_user_data(e);
+  if (macro_ignore_click) {
+    macro_ignore_click = false;
+    return;
+  }
+
+  int teach = macros_teach_slot();
+  if (teach >= 0) {
+    if ((unsigned)teach == idx) {
+      if (macros_teach_capture(wpos[0], wpos[1], wpos[2])) {
+        const macro_t *m = macros_get(idx);
+        if (state_lbl) {
+          char buf[72];
+          snprintf(buf, sizeof(buf), "Saved %s  %.2f, %.2f, %.2f", m ? m->name : "?", wpos[0],
+                   wpos[1], wpos[2]);
+          lv_label_set_text(state_lbl, buf);
+        }
+      } else if (state_lbl) {
+        lv_label_set_text(state_lbl, "Teach save failed");
+      }
+    } else {
+      macros_teach_cancel();
+      if (state_lbl) lv_label_set_text(state_lbl, "Teach cancelled");
+    }
+    refresh_macro_btns();
+    return;
+  }
+
+  const macro_t *m = macros_get(idx);
+  if (m && !m->gcode[0]) {
+    if (state_lbl) lv_label_set_text(state_lbl, "Empty — long-press to teach");
+    return;
+  }
   if (!macros_run(idx)) {
     if (state_lbl) lv_label_set_text(state_lbl, "Macro blocked (Idle+MPG?)");
-  } else if (state_lbl) {
-    const macro_t *m = macros_get(idx);
+  } else if (state_lbl && m) {
     char buf[48];
-    snprintf(buf, sizeof(buf), "Macro · %s", m ? m->name : "?");
+    snprintf(buf, sizeof(buf), "Macro · %s", m->name);
     lv_label_set_text(state_lbl, buf);
   }
 }
@@ -1351,29 +1416,23 @@ void ui_pendant_create() {
   lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
   refresh_laser_enable_ui();
 
-  // Soft macros from /macros.cfg (SD preferred)
-  unsigned mc = macros_count();
-  if (mc > MACRO_MAX) mc = MACRO_MAX;
-  if (mc == 0) {
-    for (int i = 0; i < MACRO_MAX; i++) macro_btns[i] = nullptr;
-  } else {
-    int mbw = (UI_H_RES - 12 - 3 * (int)(mc - 1)) / (int)mc;
+  // Soft macros from /macros.cfg — long-press to teach WPos, tap to run
+  {
+    int mbw = (UI_H_RES - 12 - 9) / MACRO_MAX;
     for (unsigned i = 0; i < MACRO_MAX; i++) {
-      if (i >= mc) {
-        macro_btns[i] = nullptr;
-        continue;
-      }
       const macro_t *m = macros_get(i);
       macro_btns[i] = lv_btn_create(mpg_panel);
       lv_obj_set_size(macro_btns[i], mbw, macro_h);
       lv_obj_set_pos(macro_btns[i], (int)i * (mbw + 3), macro_y);
-      style_chrome_btn(macro_btns[i], false);
       lv_obj_t *lbl = lv_label_create(macro_btns[i]);
       lv_label_set_text(lbl, m ? m->name : "?");
       lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
       lv_obj_center(lbl);
       lv_obj_add_event_cb(macro_btns[i], on_macro, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
+      lv_obj_add_event_cb(macro_btns[i], on_macro_long, LV_EVENT_LONG_PRESSED,
+                          (void *)(uintptr_t)i);
     }
+    refresh_macro_btns();
   }
 
   for (int i = 0; i < 4; i++) {

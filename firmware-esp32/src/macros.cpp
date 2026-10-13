@@ -11,14 +11,15 @@
 #include <string.h>
 
 static const char *kDefaultMacros =
-    "# Soft macros — edit on SD as /macros.cfg (wins over LittleFS).\n"
-    "# Format:  Name = g-code  (use ; to chain a few short commands)\n"
-    "# Needs Idle + MPG when the controller is online.\n"
+    "# Soft macros — edit NAMES here (left of '='). Reboot after renaming.\n"
+    "# Teach a position on the pendant: long-press button → jog → tap again.\n"
+    "# That writes G90 G0 X… Y… Z… on the right. Or type g-code by hand.\n"
+    "# Prefer SD:/macros.cfg (wins over LittleFS).\n"
     "\n"
-    "XY0 = G90 G0 X0 Y0\n"
-    "Park = G90 G0 X0 Y0\n"
-    "Z0 = G90 G0 Z0\n"
-    "Unlock = $X\n";
+    "XY0 =\n"
+    "Park =\n"
+    "Corner =\n"
+    "Focus =\n";
 
 static macro_t g_macros[MACRO_MAX];
 static unsigned g_count = 0;
@@ -30,6 +31,8 @@ static bool g_await = false;
 static uint32_t g_deadline = 0;
 static bool g_demo = false;
 
+static int g_teach = -1;
+
 static bool read_file(fs::FS &fs, const char *path, char *buf, size_t buf_sz) {
   File f = fs.open(path, "r");
   if (!f) return false;
@@ -39,12 +42,56 @@ static bool read_file(fs::FS &fs, const char *path, char *buf, size_t buf_sz) {
   return n > 0;
 }
 
+static void pad_slots(void) {
+  while (g_count < MACRO_MAX) {
+    memset(&g_macros[g_count], 0, sizeof(g_macros[g_count]));
+    snprintf(g_macros[g_count].name, MACRO_NAME_LEN, "M%u", g_count + 1);
+    g_count++;
+  }
+}
+
 static void load_defaults(void) {
   g_count = macros_parse_text(kDefaultMacros, g_macros, MACRO_MAX);
+  pad_slots();
+}
+
+bool macros_save(void) {
+  char body[1024];
+  size_t n = 0;
+  n += (size_t)snprintf(body + n, sizeof(body) - n,
+                        "# Soft macros — edit NAMES (left of '='). Reboot after renaming.\n"
+                        "# Teach on pendant: long-press → jog → tap again to save WPos.\n"
+                        "# SD:/macros.cfg wins over LittleFS.\n\n");
+  for (unsigned i = 0; i < g_count && n + 1 < sizeof(body); i++) {
+    n += (size_t)snprintf(body + n, sizeof(body) - n, "%s = %s\n", g_macros[i].name,
+                          g_macros[i].gcode);
+  }
+
+  bool ok = false;
+  if (pendant_cfg_sd_mounted()) {
+    File f = SD.open("/macros.cfg", "w");
+    if (f) {
+      f.print(body);
+      f.close();
+      ok = true;
+      Serial.println("[macro] saved sd:/macros.cfg");
+    }
+  }
+  if (pendant_cfg_lfs_mounted()) {
+    File f = LittleFS.open("/macros.cfg", "w");
+    if (f) {
+      f.print(body);
+      f.close();
+      ok = true;
+      Serial.println("[macro] saved lfs:/macros.cfg");
+    }
+  }
+  return ok;
 }
 
 void macros_begin(void) {
   load_defaults();
+  g_teach = -1;
 
   char *buf = (char *)malloc(2048);
   if (!buf) return;
@@ -55,6 +102,7 @@ void macros_begin(void) {
       unsigned n = macros_parse_text(buf, g_macros, MACRO_MAX);
       if (n > 0) {
         g_count = n;
+        pad_slots();
         from_sd = true;
         Serial.printf("[macro] loaded sd:/macros.cfg (%u)\n", g_count);
       }
@@ -74,6 +122,7 @@ void macros_begin(void) {
       unsigned n = macros_parse_text(buf, g_macros, MACRO_MAX);
       if (n > 0) {
         g_count = n;
+        pad_slots();
         Serial.printf("[macro] loaded lfs:/macros.cfg (%u)\n", g_count);
       }
     }
@@ -91,12 +140,38 @@ const macro_t *macros_get(unsigned index) {
 
 bool macros_busy(void) { return g_busy; }
 
+int macros_teach_slot(void) { return g_teach; }
+
+bool macros_teach_begin(unsigned index) {
+  if (index >= g_count || g_busy) return false;
+  // Don't teach over hand-written system commands (e.g. Unlock = $X)
+  if (g_macros[index].gcode[0] == '$') return false;
+  g_teach = (int)index;
+  Serial.printf("[macro] TEACH begin %s — jog, then tap again\n", g_macros[index].name);
+  return true;
+}
+
+void macros_teach_cancel(void) {
+  if (g_teach >= 0) Serial.println("[macro] TEACH cancel");
+  g_teach = -1;
+}
+
+bool macros_teach_capture(float x, float y, float z) {
+  if (g_teach < 0 || (unsigned)g_teach >= g_count) return false;
+  unsigned i = (unsigned)g_teach;
+  snprintf(g_macros[i].gcode, MACRO_GCODE_LEN, "G90 G0 X%.3f Y%.3f Z%.3f", x, y, z);
+  g_teach = -1;
+  bool ok = macros_save();
+  Serial.printf("[macro] TEACH saved %s → %s (%s)\n", g_macros[i].name, g_macros[i].gcode,
+                ok ? "ok" : "save failed");
+  return ok;
+}
+
 static bool controller_ready(const char *gcode) {
   if (!grbl_link_online()) return true;
   grbl_status_t st;
   if (!grbl_link_get_status(&st)) return false;
   if (!strcmp(st.state, "Idle") && st.mpg_mode) return true;
-  // Unlock-style system cmds from Alarm
   if (!strcmp(st.state, "Alarm") && gcode && gcode[0] == '$') return true;
   return false;
 }
@@ -119,7 +194,6 @@ static bool send_next_chunk(void) {
     cmd[i++] = *g_qpos++;
   }
   cmd[i] = 0;
-  // trim trailing
   while (i > 0 && (cmd[i - 1] == ' ' || cmd[i - 1] == '\t')) cmd[--i] = 0;
   if (!cmd[0]) return send_next_chunk();
 
@@ -135,6 +209,7 @@ static bool send_next_chunk(void) {
 
 bool macros_run(unsigned index) {
   if (g_busy || index >= g_count) return false;
+  if (!g_macros[index].gcode[0]) return false;
   prog_state_t ps = program_sender_state();
   if (ps == PROG_RUNNING || ps == PROG_HOLD || ps == PROG_DRAINING) return false;
   if (!controller_ready(g_macros[index].gcode) && grbl_link_online()) return false;

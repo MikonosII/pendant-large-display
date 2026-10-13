@@ -126,18 +126,26 @@ Stock pendant uses a **100 PPR** quadrature wheel. CrowPanel Advance has almost 
 
 **Option B — I2C expander** (preferred when TF uses IO4–6): set `i2c_mpg.enable 1` (and optional `i2c_mpg.addr 0x20`). PCF8574 on SDA15/SCL16 — **P0/P1** wheel, **P2–P4** axis, **P5** step (active-low).
 
-### Soft macros
+### Soft macros (teachable)
 
-Edit **`/macros.cfg`** (SD preferred, or LittleFS). Template: [`data/macros.cfg`](data/macros.cfg).
+**Names** — edit the left side of **`/macros.cfg`** (SD preferred, or LittleFS), then reboot:
 
 ```text
-XY0 = G90 G0 X0 Y0
-Park = G90 G0 X0 Y0
-Z0 = G90 G0 Z0
-Unlock = $X
+XY0 =
+Park =
+Corner =
+Focus =
 ```
 
-Use `;` to chain a few short commands. Labels should stay short. Buttons appear on the MPG page above the step sizes. Needs Idle + MPG when online (Unlock may run from Alarm).
+Template: [`data/macros.cfg`](data/macros.cfg).
+
+**Positions** — on the MPG page:
+
+1. **Long-press** a macro button (starts teach — button highlights)
+2. **Jog** the gantry to the spot
+3. **Tap** the same button again — saves `G90 G0 X… Y… Z…` into `/macros.cfg`
+
+Short-tap runs a programmed macro (needs Idle + MPG when online). Empty slots say so until taught. Hand-written g-code on the right of `=` still works; lines starting with `$` are not overwritten by teach.
 
 ### SD / LittleFS jobs
 
