@@ -20,9 +20,9 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "SmartPendant Large Screen Lab",
+  title: "SmartPendant 7″ Portrait Lab",
   description:
-    "Layout lab for the SmartPendant fork targeting bigger touch screens.",
+    "Layout lab for the SmartPendant fork targeting a 7″ 480×800 portrait touch screen.",
 };
 
 export default function RootLayout({

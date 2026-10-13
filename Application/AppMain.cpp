@@ -69,9 +69,9 @@ static StHalIicThreadSafe iic1(hi2c1);
 static StHalUart uart(huart1);
 // Display & touch — sizes come from ScreenConfig.h (compile-time profile).
 // Stock 3.5"/4" panels use ILI9488 (or pin-compatible ST7796) at 480×320.
-// The 5" 480×800 profile still constructs ILI9488 with the larger geometry so
-// the UI layout runs; wire a matching controller (or extend DevCore) before
-// flashing that profile to hardware.
+// The 7" 480×800 portrait profile constructs the driver with 800×480 native
+// geometry (rotated to portrait in Application). Wire a matching 7" controller
+// (or extend DevCore) before flashing that profile to hardware.
 static ILI9488 display(PANEL_NATIVE_W, PANEL_NATIVE_H, spi1, display_cs, display_dc, &display_rst);
 static FT6236 touch(iic1, ITouchscreen::ROTATION_LEFT, SCREEN_TOUCH_W, SCREEN_TOUCH_H);
 // NVM: 24xx256 class I2C EEPROM, no write protection, 32 kB, 64 byte pages.

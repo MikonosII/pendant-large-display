@@ -24,7 +24,7 @@
 // Large-screen fork of upstream SmartPendant 0.41.x
 static constexpr uint8_t VERSION_MAJOR = 0u;
 static constexpr uint16_t VERSION_MINOR = 50u;
-static constexpr uint8_t VERSION_BUILD = 0u;
+static constexpr uint8_t VERSION_BUILD = 1u;
 
 static constexpr uint32_t EEP_VERSION = 0u;
 

@@ -4,7 +4,7 @@ project(SmartPendantLarge
   VERSION 0.50.0
   LANGUAGES ASM C CXX)
 
-# Display profile: 0=3.5" 320x480, 1=4" 320x480, 2=5" 480x800 (default)
+# Display profile: 0=3.5" 320x480, 1=4" 320x480, 2=7" 480x800 portrait (default)
 set(SCREEN_PROFILE "2" CACHE STRING "Screen profile id from Application/ScreenConfig.h")
 
 file(GLOB_RECURSE SRC

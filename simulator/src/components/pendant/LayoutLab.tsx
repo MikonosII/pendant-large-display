@@ -38,8 +38,9 @@ export function LayoutLab() {
             Large Screen Lab
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
-            Preview the pendant chrome at stock 3.5″ and the forked 5″ 480×800
-            layout. Touch the screen — tabs, MPG, jog, and overrides are live.
+            Preview the pendant chrome at stock 3.5″ and the forked 7″ 480×800
+            portrait layout. Touch the screen — tabs, MPG, jog, and overrides
+            are live.
           </p>
         </div>
 
@@ -102,7 +103,7 @@ export function LayoutLab() {
             Compare stock
           </Button>
           <Button size="sm" onClick={() => setProfileId(2)}>
-            Use 5″ layout
+            Use 7″ portrait
           </Button>
         </div>
       </aside>

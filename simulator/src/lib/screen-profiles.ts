@@ -47,9 +47,9 @@ export const PROFILES: ScreenProfile[] = [
   },
   {
     id: 2,
-    name: '5.0" large (480×800)',
-    shortName: "5.0″",
-    diagonalIn: 5.0,
+    name: '7.0" portrait (480×800)',
+    shortName: "7.0″",
+    diagonalIn: 7.0,
     logicalW: 480,
     logicalH: 800,
     headerH: 56,
@@ -57,7 +57,7 @@ export const PROFILES: ScreenProfile[] = [
     softBtnH: 48,
     cmakeValue: "2",
     hardwareNote:
-      "Default in this fork. Needs an 800×480-class panel (portrait 480×800) and a matching controller — not the stock ILI9488.",
+      "Default in this fork. 7″ 800×480 panel rotated to portrait 480×800 — matching controller required (not stock ILI9488).",
   },
 ];
 

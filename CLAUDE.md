@@ -10,7 +10,7 @@ Hardware (stock profiles): an ILI9488 SPI display (480×320 panel driven **in po
 
 ### Screen geometry — derive from `ScreenConfig.h`, don't assume
 
-Logical size and chrome heights come from `Application/ScreenConfig.h` (`SCREEN_PROFILE`). Default in this fork is **5″ 480×800** (`SCREEN_PROFILE_5INCH_480x800`). Stock 3.5″ remains profile `0` (320×480).
+Logical size and chrome heights come from `Application/ScreenConfig.h` (`SCREEN_PROFILE`). Default in this fork is **7″ 480×800 portrait** (`SCREEN_PROFILE_7INCH_480x800`) — native 800×480 panel rotated to portrait. Stock 3.5″ remains profile `0` (320×480).
 
 After `IDisplay::ROTATION_RIGHT`, `GetScreenW()` / `GetScreenH()` return the logical portrait size. Header height is `SCREEN_HEADER_H` (not a hard-coded 40). Soft buttons use `SCREEN_SOFT_BTN_H`.
 

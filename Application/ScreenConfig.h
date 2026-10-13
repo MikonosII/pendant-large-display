@@ -4,8 +4,9 @@
 //
 //  Upstream SmartPendant targets a 3.5" ILI9488 panel (480×320 native,
 //  shown in portrait as 320×480). This fork adds selectable profiles so the
-//  same firmware can drive a physically larger panel and/or a higher-resolution
-//  portrait framebuffer.
+//  same firmware can drive a physically larger panel.
+//
+//  Target for this fork: 7" 800×480 panel driven in portrait as 480×800.
 //
 //  Select a profile with -DSCREEN_PROFILE=... at compile time, or edit the
 //  default below. The interactive layout lab under simulator/ mirrors these
@@ -22,11 +23,14 @@
 // *****************************************************************************
 #define SCREEN_PROFILE_3INCH5_320x480  0  // Stock Devtronic / upstream
 #define SCREEN_PROFILE_4INCH_320x480   1  // Same pixels, ~4" glass (ST7796/ILI9488)
-#define SCREEN_PROFILE_5INCH_480x800   2  // Larger UI canvas (480×800 portrait)
+#define SCREEN_PROFILE_7INCH_480x800   2  // 7" 800×480 panel → 480×800 portrait
+
+// Back-compat alias (older docs used a 5" name for the same logical canvas)
+#define SCREEN_PROFILE_5INCH_480x800   SCREEN_PROFILE_7INCH_480x800
 
 #ifndef SCREEN_PROFILE
-// Default this fork to the larger 5" logical canvas.
-#define SCREEN_PROFILE SCREEN_PROFILE_5INCH_480x800
+// Default: 7" touch panel in portrait (480×800).
+#define SCREEN_PROFILE SCREEN_PROFILE_7INCH_480x800
 #endif
 
 // *****************************************************************************
@@ -59,9 +63,10 @@
 #define SCREEN_PROFILE_DIAG_IN  3.5f
 #endif
 
-#elif (SCREEN_PROFILE == SCREEN_PROFILE_5INCH_480x800)
+#elif (SCREEN_PROFILE == SCREEN_PROFILE_7INCH_480x800)
 
-// 5" modules are commonly 800×480 native; we rotate to 480×800 portrait.
+// 7" modules are commonly 800×480 native; Application uses ROTATION_RIGHT so
+// the UI framebuffer is portrait 480 wide × 800 tall.
 #define PANEL_NATIVE_W          800
 #define PANEL_NATIVE_H          480
 #define LOGICAL_SCREEN_W        480
@@ -72,8 +77,8 @@
 #define SCREEN_TOUCH_W          480u
 #define SCREEN_TOUCH_H          800u
 #define DISPLAY_LINE_BUF_PIXELS 800
-#define SCREEN_PROFILE_NAME     "5.0\" 480x800"
-#define SCREEN_PROFILE_DIAG_IN  5.0f
+#define SCREEN_PROFILE_NAME     "7.0\" 480x800 portrait"
+#define SCREEN_PROFILE_DIAG_IN  7.0f
 
 #else
 #error "Unsupported SCREEN_PROFILE value"
