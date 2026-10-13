@@ -49,7 +49,8 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 * grblHAL UART link (UART1-OUT IO20/IO19 @ 115200): **wired** — plain ASCII default; framed `Plugin_mpg_transport` selectable in SETTINGS
 * G-code toolpath preview from parsed NC (`jobs/sample-badge.nc`): **wired** in firmware + simulator (load custom `.nc` in the lab GCODE tab)
 * OVERRIDE / FEED tabs with grblHAL realtime override bytes + power feed: **wired**
-* Full screen set (probe, sender, …): **partially stubbed** (PROBE / SETTINGS)
+* Handwheel quadrature path: **software ready** (pins default −1; set `HANDWHEEL_A/B_GPIO` when wired)
+* Full screen set (probe, sender, …): **partially stubbed** (PROBE)
 
 ## Credits
 

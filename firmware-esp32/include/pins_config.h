@@ -26,6 +26,21 @@
 #define GRBL_UART_RX 19
 #define GRBL_UART_BAUD 115200
 
+// Handwheel quadrature A/B (3.3 V TTL, internal pull-ups enabled).
+// CrowPanel Advance has almost no free GPIO after the RGB panel + UART1.
+// Leave −1 until wired. Common reclaim when TF card / speaker are unused
+// (set rear DIP switches accordingly): IO4 = A, IO5 = B.
+#ifndef HANDWHEEL_A_GPIO
+#define HANDWHEEL_A_GPIO -1
+#endif
+#ifndef HANDWHEEL_B_GPIO
+#define HANDWHEEL_B_GPIO -1
+#endif
+// Counts per detent after 4× decode; stock pendant is ~100 PPR.
+#ifndef HANDWHEEL_PPR
+#define HANDWHEEL_PPR 100
+#endif
+
 // Chrome metrics (match Application/ScreenConfig.h profile 2)
 #define SCREEN_HEADER_H 56
 #define SCREEN_TABS_H 48

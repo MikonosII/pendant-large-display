@@ -69,10 +69,25 @@ g++ -std=c++17 -I include -o /tmp/test_mpg_framed \
   test/test_mpg_framed.cpp src/mpg_framed.cpp && /tmp/test_mpg_framed
 ```
 
+### Handwheel (MPG encoder)
+
+Stock pendant uses a **100 PPR** quadrature wheel on a timer channel. CrowPanel Advance has almost no free GPIO after the RGB bus + UART1, so A/B default to **disabled (`-1`)**.
+
+1. Free two 3.3 V inputs (common: reclaim **IO4 / IO5** when TF card & speaker are off — check rear DIP switches).
+2. In `include/pins_config.h` (or `build_flags`):
+   ```
+   -DHANDWHEEL_A_GPIO=4 -DHANDWHEEL_B_GPIO=5
+   ```
+3. Wire A/B (and GND). Internal pull-ups are enabled.
+4. With MPG on, each detent jogs the active axis by the selected step size.
+
+Without pins, the decode path still compiles; the layout lab exposes **◀ Wheel / Wheel ▶** as a stand-in.
+
 ## Next (not in this slice)
 
 * Probe / program sender / SD or USB job load on device
 * Case / mounting for the 7″ panel + handwheel
+* Optional I2C GPIO expander for handwheel + axis-select buttons
 
 ## Layout lab
 

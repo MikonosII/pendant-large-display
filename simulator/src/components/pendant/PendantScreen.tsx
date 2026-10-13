@@ -171,6 +171,20 @@ export function PendantScreen({ profile, scale }: Props) {
                 window.setTimeout(() => setStartFlash(false), 800);
               }}
               startFlash={startFlash}
+              onHandwheel={(dir) => {
+                if (!mpgOn) return;
+                setAxes((prev) =>
+                  prev.map((a, i) =>
+                    i === activeAxis
+                      ? {
+                          ...a,
+                          wpos:
+                            Math.round((a.wpos + dir * step) * 1000) / 1000,
+                        }
+                      : a
+                  )
+                );
+              }}
             />
           )}
           {page === "OVERRIDE" && (
@@ -455,6 +469,7 @@ function MpgView({
   onLaser,
   onStart,
   startFlash,
+  onHandwheel,
 }: {
   axes: Axis[];
   activeAxis: number;
@@ -474,6 +489,7 @@ function MpgView({
   onLaser: (d: number) => void;
   onStart: () => void;
   startFlash: boolean;
+  onHandwheel: (dir: 1 | -1) => void;
 }) {
   const steps = [0.01, 0.1, 1, 10];
   const laserOn = laserCmd > 0;
@@ -603,6 +619,26 @@ function MpgView({
       >
         START
       </button>
+
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onHandwheel(-1)}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+        >
+          ◀ Wheel
+        </button>
+        <div className="px-1 text-center text-[8px] uppercase tracking-wider text-zinc-500">
+          MPG
+        </div>
+        <button
+          type="button"
+          onClick={() => onHandwheel(1)}
+          className="rounded-sm border border-[#222] bg-[#2f2f2f] py-2 text-[11px] font-semibold text-white"
+        >
+          Wheel ▶
+        </button>
+      </div>
     </div>
   );
 }
@@ -979,6 +1015,14 @@ function SettingsView({
           Plain matches stock grblHAL ASCII. Framed is Plugin_mpg_transport
           (SOF/CRC/ACK) — both ends must match. Lab toggle is visual only;
           firmware switches the real UART path.
+        </p>
+      </div>
+      <div>
+        <div className="text-[9px] uppercase text-zinc-500">Handwheel</div>
+        <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+          CrowPanel has almost no free GPIO. Firmware defaults pins to −1;
+          set HANDWHEEL_A/B_GPIO (often IO4/IO5 when TF/speaker are off). Lab
+          uses ◀ Wheel / Wheel ▶ on the MPG page as a virtual encoder.
         </p>
       </div>
     </div>

@@ -3,6 +3,7 @@
 #include "gcode_path.h"
 #include "sample_job_nc.h"
 #include "grbl_link.h"
+#include "handwheel.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -1001,6 +1002,20 @@ void ui_pendant_create() {
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
     lv_obj_set_pos(hint, 4, 140);
+
+    lv_obj_t *hw = lv_label_create(settings_panel);
+    char hwbuf[96];
+#if (HANDWHEEL_A_GPIO >= 0) && (HANDWHEEL_B_GPIO >= 0)
+    snprintf(hwbuf, sizeof(hwbuf), "HANDWHEEL\nA=IO%d  B=IO%d\n%s", HANDWHEEL_A_GPIO,
+             HANDWHEEL_B_GPIO, handwheel_hw_present() ? "ISR armed" : "not armed");
+#else
+    snprintf(hwbuf, sizeof(hwbuf),
+             "HANDWHEEL\nPins disabled (−1)\nSet HANDWHEEL_A/B_GPIO\n(e.g. IO4/IO5)");
+#endif
+    lv_label_set_text(hw, hwbuf);
+    lv_obj_set_style_text_font(hw, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hw, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_pos(hw, 4, 230);
     refresh_transport_ui();
   }
 
@@ -1072,7 +1087,26 @@ void ui_pendant_create() {
   show_page(0);
 }
 
+static void apply_handwheel() {
+  if (!mpg_on || page_idx != 0) {
+    (void)handwheel_take_delta();  // discard while not in MPG control
+    return;
+  }
+  int32_t d = handwheel_take_delta();
+  if (!d) return;
+  // One detent ≈ one step size on the active axis
+  float dist = (float)d * k_steps[step_idx];
+  if (grbl_link_online()) {
+    grbl_link_jog(active_axis, dist, jog_feed_for_step());
+  } else {
+    wpos[active_axis] += dist;
+    refresh_axes();
+  }
+}
+
 void ui_pendant_tick() {
+  apply_handwheel();
+
   static uint32_t last_ui_ms = 0;
   const uint32_t now = millis();
   if (now - last_ui_ms < 100) return;
@@ -1080,7 +1114,10 @@ void ui_pendant_tick() {
 
   grbl_status_t st;
   if (!grbl_link_get_status(&st) || !st.online) {
-    lv_label_set_text(state_lbl, "Offline  ·  demo  ·  mm");
+    char offline[48];
+    snprintf(offline, sizeof(offline), "Offline  ·  demo  ·  %s",
+             handwheel_hw_present() ? "MPG hw" : "mm");
+    lv_label_set_text(state_lbl, offline);
     return;
   }
 
