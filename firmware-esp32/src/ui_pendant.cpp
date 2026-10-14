@@ -90,8 +90,6 @@ static lv_obj_t *axis_wpos[3];
 static lv_obj_t *axis_mpos[3];
 static lv_obj_t *step_btns[4];
 static lv_obj_t *soft_btns[3];
-static lv_obj_t *laser_test_btn;
-static lv_obj_t *laser_test_lbl;
 static lv_obj_t *macro_btns[MACRO_MAX];
 static lv_obj_t *feed_laser_on_btn;
 static lv_obj_t *feed_laser_off_btn;
@@ -433,19 +431,6 @@ static void refresh_power_feed_ui() {
 }
 
 static void refresh_laser_enable_ui() {
-  if (laser_test_btn) {
-    if (laser_k_on) {
-      lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0xea580c), 0);
-      lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0xfbbf24), 0);
-      lv_obj_set_style_border_width(laser_test_btn, 2, 0);
-      if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER TEST · ON");
-    } else {
-      lv_obj_set_style_bg_color(laser_test_btn, lv_color_hex(0x7c2d12), 0);
-      lv_obj_set_style_border_color(laser_test_btn, lv_color_hex(0x9a3412), 0);
-      lv_obj_set_style_border_width(laser_test_btn, 1, 0);
-      if (laser_test_lbl) lv_label_set_text(laser_test_lbl, "LASER TEST");
-    }
-  }
   if (feed_laser_on_btn) {
     lv_obj_set_style_bg_color(
         feed_laser_on_btn, laser_k_on ? lv_color_hex(0xea580c) : lv_color_hex(0x2f2f2f), 0);
@@ -484,12 +469,12 @@ static void set_laser_k(bool on, bool with_pwm) {
       if (with_pwm) {
         snprintf(buf, sizeof(buf), "Laser ON  ·  K+  %0.1f%%  S%.0f", laser_feed_pct, s);
       } else {
-        snprintf(buf, sizeof(buf), "Laser TEST ON  ·  K+ M64P%d",
+        snprintf(buf, sizeof(buf), "Laser K+ ON  ·  M64P%d",
                  pendant_cfg_get()->laser_enable_dout);
       }
       lv_label_set_text(state_lbl, buf);
     } else {
-      lv_label_set_text(state_lbl, with_pwm ? "Laser ON  ·  demo" : "Laser TEST ON  ·  demo");
+      lv_label_set_text(state_lbl, with_pwm ? "Laser ON  ·  demo" : "Laser K+ ON  ·  demo");
     }
     laser_k_on = true;
   } else {
@@ -504,12 +489,6 @@ static void set_laser_k(bool on, bool with_pwm) {
     laser_k_on = false;
   }
   refresh_laser_enable_ui();
-}
-
-static void on_laser_test(lv_event_t *e) {
-  (void)e;
-  // Toggle K+ enable only (no PWM) for beam / wiring check
-  set_laser_k(!laser_k_on, false);
 }
 
 static bool macro_ignore_click = false;
@@ -1314,38 +1293,35 @@ void ui_pendant_create() {
   lv_obj_set_style_pad_all(mpg_panel, 0, 0);
   lv_obj_clear_flag(mpg_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Bottom chrome: steps + 2×4 macros + laser test — sized to fill below telemetry.
-  // Map takes the leftover height above DRO/tele.
+  // Bottom chrome: steps + 2×4 macros — sized to fill below telemetry.
+  // Map takes the leftover height above DRO/tele. K+ test is a physical button.
   const int panel_h = content_h - 8;
   const int dro_h = 72;
   const int tele_h = 64;
   const int section_gap = 6;
   const int macro_rows = (MACRO_MAX + MACRO_COLS - 1) / MACRO_COLS;
   const int macro_gap = 4;
-  const int stack_gap = 4;  // laser↔macros, macros↔steps
+  const int stack_gap = 4;  // macros↔steps
 
   // Prefer tall touch targets; absorb leftover into map.
   int step_h = 56;
-  int macro_h = 58;
-  int laser_h = 56;
+  int macro_h = 64;
   int macro_block_h = macro_rows * macro_h + (macro_rows - 1) * macro_gap;
-  int chrome_h = laser_h + stack_gap + macro_block_h + stack_gap + step_h;
+  int chrome_h = macro_block_h + stack_gap + step_h;
   int fixed_mid = dro_h + section_gap + tele_h + section_gap;  // DRO + tele + gaps
   int map_h_px = panel_h - fixed_mid - chrome_h - section_gap;
   if (map_h_px < 180) {
     // Narrow panels: shrink chrome a bit so the map stays usable
     step_h = 48;
-    macro_h = 50;
-    laser_h = 48;
+    macro_h = 54;
     macro_block_h = macro_rows * macro_h + (macro_rows - 1) * macro_gap;
-    chrome_h = laser_h + stack_gap + macro_block_h + stack_gap + step_h;
+    chrome_h = macro_block_h + stack_gap + step_h;
     map_h_px = panel_h - fixed_mid - chrome_h - section_gap;
     if (map_h_px < 120) map_h_px = 120;
   }
 
   const int step_y = panel_h - step_h;
   const int macro_y0 = step_y - macro_block_h - stack_gap;
-  const int laser_y = macro_y0 - stack_gap - laser_h;
 
   setup_live_map(mpg_panel, 0, UI_H_RES - 12, map_h_px);
 
@@ -1403,20 +1379,8 @@ void ui_pendant_create() {
   lv_obj_add_event_cb(laser_box, on_laser_bump, LV_EVENT_CLICKED, (void *)(intptr_t)1);
   make_telemetry_cell(tele, "OV", &ov_lbl);
 
-  // Laser TEST toggle — K+ enable only (PWM/power lives on FEED tab).
-  // No MPG START: LightBurn owns cycle start / job run on its own link.
-  laser_test_btn = lv_btn_create(mpg_panel);
-  lv_obj_set_size(laser_test_btn, UI_H_RES - 12, laser_h);
-  lv_obj_set_pos(laser_test_btn, 0, laser_y);
-  lv_obj_set_style_radius(laser_test_btn, 2, 0);
-  lv_obj_set_style_text_color(laser_test_btn, lv_color_hex(0xffffff), 0);
-  laser_test_lbl = lv_label_create(laser_test_btn);
-  lv_obj_set_style_text_font(laser_test_lbl, &lv_font_montserrat_20, 0);
-  lv_obj_center(laser_test_lbl);
-  lv_obj_add_event_cb(laser_test_btn, on_laser_test, LV_EVENT_CLICKED, NULL);
-  refresh_laser_enable_ui();
-
-  // Soft macros from /macros.cfg — long-press to teach WPos, tap to run (2×4)
+  // Soft macros from /macros.cfg — long-press to teach WPos, tap to run (2×4).
+  // K+ enable test is a physical button (not on MPG). FEED still has LASER ON/OFF.
   {
     int mbw = (UI_H_RES - 12 - (MACRO_COLS - 1) * 3) / MACRO_COLS;
     for (unsigned i = 0; i < MACRO_MAX; i++) {
@@ -1663,7 +1627,7 @@ void ui_pendant_create() {
     lv_obj_t *lh = lv_label_create(feed_panel);
     lv_label_set_long_mode(lh, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lh, UI_H_RES - 28);
-    lv_label_set_text(lh, "ON = K+ (M64) + M3 from %. OFF = M65 + M5.\nMPG LASER TEST toggles K+ only.");
+    lv_label_set_text(lh, "ON = K+ (M64) + M3 from %. OFF = M65 + M5.\nPhysical button toggles K+ only (no PWM).");
     lv_obj_set_style_text_font(lh, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lh, lv_color_hex(0x888888), 0);
     lv_obj_set_pos(lh, 4, 500);

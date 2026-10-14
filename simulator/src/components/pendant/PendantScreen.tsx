@@ -232,8 +232,6 @@ export function PendantScreen({ profile }: Props) {
               onLaser={(d) =>
                 setLaserCmd((s) => Math.min(1000, Math.max(0, s + d)))
               }
-              laserKOn={laserKOn}
-              onLaserTest={() => setLaserKOn((v) => !v)}
               macros={macros}
               teachSlot={teachSlot}
               onMacroTeach={(idx) => {
@@ -766,8 +764,6 @@ function MpgView({
   onStep,
   onZero,
   onLaser,
-  laserKOn,
-  onLaserTest,
   macros,
   teachSlot,
   onMacroTeach,
@@ -789,8 +785,6 @@ function MpgView({
   onStep: (s: number) => void;
   onZero: (i: number) => void;
   onLaser: (d: number) => void;
-  laserKOn: boolean;
-  onLaserTest: () => void;
   macros: MacroSlot[];
   teachSlot: number;
   onMacroTeach: (idx: number) => void;
@@ -912,28 +906,13 @@ function MpgView({
         </div>
       )}
 
-      {/* Bottom chrome: Advance adds LASER TEST; all profiles get 2×4 macros + steps */}
+      {/* Bottom chrome: 2×4 macros + steps (K+ test is a physical button) */}
       <div
         className={cn(
           "flex flex-col",
           roomy ? "mt-auto shrink-0 space-y-1" : "min-h-0 flex-[4] gap-1"
         )}
       >
-        {roomy && (
-          <button
-            type="button"
-            onClick={onLaserTest}
-            className={cn(
-              "w-full rounded-sm border py-3.5 text-sm font-bold tracking-wide text-white transition-colors",
-              laserKOn
-                ? "border-amber-400 bg-orange-600 shadow-[0_0_12px_rgba(251,146,60,0.55)]"
-                : "border-orange-950 bg-orange-950/80"
-            )}
-          >
-            {laserKOn ? "LASER TEST · ON" : "LASER TEST"}
-          </button>
-        )}
-
         <div
           className={cn(
             "grid grid-cols-4",
@@ -1442,8 +1421,8 @@ function FeedView({
         </div>
         {roomy && (
           <p className="mt-1 text-[9px] leading-snug text-zinc-500">
-            ON = K+ (M64) + M3 from %. OFF = M65 + M5. MPG LASER TEST toggles
-            K+ only.
+            ON = K+ (M64) + M3 from %. OFF = M65 + M5. Physical button toggles
+            K+ only (no PWM).
           </p>
         )}
       </div>

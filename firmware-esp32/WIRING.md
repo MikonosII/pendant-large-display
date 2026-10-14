@@ -61,7 +61,7 @@ Do **not** tie a 5 V MCU pin straight into K+ unless the PSU docs say that pin i
   PSU K+ ─────► (closed when DOUT active) ─────► PSU G / K− / GND
 ```
 
-* **LASER TEST** (MPG): toggles **only** this path (`M64`/`M65`).
+* **Physical K+ test button**: toggles **only** this path (`M64`/`M65`, no PWM).
 * **LASER ON** (FEED): `M64` + `M3` at the FEED % → S.
 * **LASER OFF**: `M65` + `M5`.
 
@@ -90,10 +90,10 @@ The pendant **never** carries PWM. It only sends `M3 S…` / `M5` over UART; **g
 
 | Wire | Role | Armed by |
 |------|------|----------|
-| **K+ → GND** (dout / `M64`) | Enable / “trigger” interlock — beam *allowed* | LASER TEST, or FEED LASER ON |
-| **PWM → IN** (`M3 S`) | Power level while allowed | FEED LASER ON only (not LASER TEST) |
+| **K+ → GND** (dout / `M64`) | Enable / “trigger” interlock — beam *allowed* | Physical K+ test, or FEED LASER ON |
+| **PWM → IN** (`M3 S`) | Power level while allowed | FEED LASER ON only (not K+ test) |
 
-So: **LASER TEST** checks the K+ path with PWM off. **FEED LASER ON** closes K+ *and* drives PWM at the FEED %. **LASER OFF** opens K+ (`M65`) and stops PWM (`M5`).
+So: the **physical K+ button** checks enable with PWM off. **FEED LASER ON** closes K+ *and* drives PWM at the FEED %. **LASER OFF** opens K+ (`M65`) and stops PWM (`M5`).
 
 Do **not** put spindle PWM on K+ (that is the enable short-to-ground path). Do **not** put PWM on the CrowPanel.
 
@@ -114,7 +114,7 @@ Wire per your supply (names vary: TH/TL/WP vs H/L/P):
 | Status / DRO | UART | `?` → `<…\|FS:…>` |
 | MPG claim | UART | realtime `0x8B` |
 | Jog / hold / start | UART | `$J=…` / `!` / `~` |
-| LASER TEST | UART → dout | `M64 P0` / `M65 P0` |
+| Physical K+ test | UART → dout | `M64 P0` / `M65 P0` |
 | FEED LASER ON | UART → dout + PWM | `M64 P0` + `M3 S…` |
 | FEED LASER OFF | UART → dout + PWM | `M65 P0` + `M5` |
 

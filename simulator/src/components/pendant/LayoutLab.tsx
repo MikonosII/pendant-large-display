@@ -28,9 +28,9 @@ export function LayoutLab() {
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
             Preview CrowPanel Advance MPG (5″ default, 7″ kept): live map,
-            laser test, overrides, probe, jobs. Stock 3.5″/4.0″ share the top
+            macros, overrides, probe, jobs. Stock 3.5″/4.0″ share the top
             Idle/MPG strip and fill MPG with DRO, 2×4 macros, and steps;
-            settings and other tabs stay shared.
+            settings and other tabs stay shared. K+ enable test is physical.
           </p>
         </div>
 

@@ -47,8 +47,7 @@ Use `crowpanel-advance-7-v12` if your 7″ board is an older Advance revision (d
 * **Soft macros** — 8 buttons (2×4) from **`/macros.cfg`** on SD (preferred) or LittleFS (`Name = g-code`). Edit names in the file, reboot — no rebuild.
 * **GCODE toolpath preview** — path canvas for jobs you load/RUN from the pendant (not from LightBurn)
 * **OVERRIDE / FEED tabs** — feed/spindle/rapid realtime overrides (0x90–0x9D), coolant toggles, power-feed jog rate + ±5 mm jogs
-* **LASER TEST** (MPG) — toggle K+ enable only (`M64`/`M65`). Lights when armed. No MPG START — LightBurn owns job start/stop.
-* **LASER ON / OFF** (FEED tab) — power in **percent (0.1% steps)** → `M3 S` via `$30`; ON = `M64` + `M3`; OFF = `M65` + `M5`. Dout = `LASER_ENABLE_DOUT`; default = `LASER_FEED_PCT` (5.0%).
+* **LASER ON / OFF** (FEED tab) — power in **percent (0.1% steps)** → `M3 S` via `$30`; ON = `M64` + `M3`; OFF = `M65` + `M5`. Dout = `LASER_ENABLE_DOUT`; default = `LASER_FEED_PCT` (5.0%). K+ enable-only test is a **physical button** (not on MPG). No MPG START — LightBurn owns job start/stop.
 * **PROBE** — axis select, G38.2/G38.3 toward WPos ± travel, live `Pn:P` contact, last `[PRB:]` machine coords, Zero WPos
 * **GCODE / jobs** — list + load embedded sample, LittleFS `/jobs`, and SD/TF `/jobs` into the toolpath preview
 * **Program sender** — GCODE **RUN / HOLD / STOP** streams the loaded NC to grblHAL one line per `ok` (memory if it fits, else line-by-line from FS). Offline demo paces without a controller.

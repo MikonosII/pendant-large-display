@@ -4,7 +4,7 @@
 //
 //  Upstream SmartPendant targets a 3.5" ILI9488 panel (480×320 native,
 //  shown in portrait as 320×480). Stock 3.5"/4.0" keep DRO + steps chrome
-//  plus a compact 2×4 soft-macro grid; live map / LASER TEST are Advance-only.
+//  plus a compact 2×4 soft-macro grid; live map is Advance-only.
 //  Non-display work (settings.cfg, macros.cfg, UART, laser dout, …) is shared.
 //
 //  Flash target: CrowPanel Advance via firmware-esp32/ (480×800 portrait).
